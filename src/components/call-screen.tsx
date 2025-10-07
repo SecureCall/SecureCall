@@ -164,6 +164,21 @@ export default function CallScreen() {
   };
 
   const startRecording = async () => {
+    // Double-check permission before starting
+    if (permissionState !== 'granted') {
+      await requestMicrophonePermission();
+      // If still not granted, exit
+      if (permissionState !== 'granted') {
+        toast({
+            variant: 'destructive',
+            title: 'Error de Micrófono',
+            description:
+            'No se pudo acceder al micrófono. Por favor, comprueba los permisos.',
+        });
+        return;
+      }
+    }
+      
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       mediaRecorderRef.current = new MediaRecorder(stream);
@@ -507,5 +522,3 @@ export default function CallScreen() {
     </Card>
   );
 }
-
-    
