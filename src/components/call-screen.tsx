@@ -172,50 +172,47 @@ export default function CallScreen() {
       setRecordingState('playing'); // Revert to a state where they can try again
     }
   };
-  
-  
-  const simulateRecordingAndAlteration = async () => {
+
+  const handleGenerateVoice = async () => {
     setRecordingState('loading');
-    
-    if (permissionState === 'granted') {
-       toast({
-        title: 'Grabación en curso...',
-        description: 'En un entorno real, estaríamos grabando tu voz.',
-      });
-    } else {
-       toast({
-        title: 'Simulación de Grabación',
-        description: 'Usando texto de muestra para generar voz alterada...',
-      });
-    }
-
-
     const values = form.getValues();
-    const result = await getAlteredVoiceAction({
-      ...values,
-      text: SAMPLE_TEXT,
-    });
-
-    if (result.error) {
+    
+    try {
+      const result = await getAlteredVoiceAction({
+        ...values,
+        text: SAMPLE_TEXT, // In a real scenario, this would be the recorded audio data URI
+      });
+  
+      if (result.error) {
+        toast({
+          variant: 'destructive',
+          title: 'Error de Generación',
+          description: result.error,
+        });
+        resetState();
+      } else if (result.audioDataUri) {
+        setAudioSrc(result.audioDataUri);
+        toast({
+          title: '¡Éxito!',
+          description: 'Tu voz alterada ha sido generada.',
+        });
+        setRecordingState('playing');
+      }
+    } catch (e: any) {
+      console.error("Fatal generation error:", e);
       toast({
         variant: 'destructive',
-        title: 'Error',
-        description: result.error,
+        title: 'Error Crítico',
+        description: 'No se pudo contactar el servicio de IA. Inténtalo de nuevo más tarde.',
       });
       resetState();
-    } else if (result.audioDataUri) {
-      setAudioSrc(result.audioDataUri);
-      toast({
-        title: '¡Éxito!',
-        description: 'Tu voz alterada ha sido generada.',
-      });
-      setRecordingState('playing');
     }
   };
-
+  
   const startRecording = async () => {
     if (permissionState !== 'granted') {
-       await simulateRecordingAndAlteration();
+       // If no mic, go straight to generation with sample text
+       await handleGenerateVoice();
        return;
     }
       
@@ -229,8 +226,8 @@ export default function CallScreen() {
       };
 
       mediaRecorderRef.current.onstop = async () => {
-        setRecordingState('loading');
-        await simulateRecordingAndAlteration();
+        // Once recording stops, generate the voice
+        await handleGenerateVoice();
         stream.getTracks().forEach((track) => track.stop());
       };
 
@@ -244,6 +241,7 @@ export default function CallScreen() {
         description:
           'Ocurrió un error al intentar iniciar la grabación.',
       });
+      resetState();
     }
   };
 
