@@ -3,7 +3,6 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import {
   AlertTriangle,
-  Grid3x3,
   Loader2,
   Mic,
   MicOff,
@@ -103,7 +102,7 @@ export default function CallScreen() {
         variant: 'destructive',
         title: 'Error',
         description:
-          'You must be logged in to save a voice profile.',
+          'No se pudo guardar el perfil de voz. Inténtalo de nuevo.',
       });
       return;
     }
@@ -209,6 +208,7 @@ export default function CallScreen() {
 
   const handleMicButtonClick = () => {
     if (recordingState === 'idle' || recordingState === 'saved') {
+      setAudioSrc(null); // Clear previous audio
       startRecording();
     } else if (recordingState === 'recording') {
       stopRecording();
@@ -264,7 +264,7 @@ export default function CallScreen() {
 
         <Form {...form}>
           <form onSubmit={(e) => e.preventDefault()} className="space-y-6">
-            <fieldset disabled={!isEffectOn || recordingState !== 'idle'}>
+            <fieldset disabled={!isEffectOn || (recordingState !== 'idle' && recordingState !== 'saved') }>
               <FormField
                 control={form.control}
                 name="gender"
@@ -340,7 +340,7 @@ export default function CallScreen() {
               </Button>
               <p className="text-sm text-muted-foreground mt-2 h-4">
                 {recordingState === 'recording' && 'Grabando... pulsa para parar.'}
-                {(recordingState === 'idle' || recordingState === 'saved') && 'Pulsa para grabar.'}
+                {(recordingState === 'idle' || recordingState === 'saved') && 'Pulsa para grabar y probar un perfil.'}
                 {recordingState === 'loading' && 'Procesando...'}
                 {recordingState === 'playing' && 'Reproduciendo voz alterada.'}
               </p>
@@ -358,9 +358,9 @@ export default function CallScreen() {
               Your browser does not support the audio element.
             </audio>
             {recordingState !== 'recording' && recordingState !== 'loading' && (
-              <Button onClick={handleSaveVoice} disabled={!user}>
+              <Button onClick={handleSaveVoice} disabled={!user || recordingState === 'saved'}>
                 <Save className="mr-2 h-4 w-4" />
-                Guardar Voz
+                {recordingState === 'saved' ? '¡Voz Guardada!' : 'Guardar Voz'}
               </Button>
             )}
           </div>
