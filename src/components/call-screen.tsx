@@ -2,8 +2,6 @@
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import {
-  AlertTriangle,
-  Loader2,
   Mic,
   MicOff,
   PhoneOff,
@@ -12,6 +10,7 @@ import {
   Square,
   Volume2,
   AlertCircle,
+  Loader2,
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
@@ -61,7 +60,8 @@ export default function CallScreen() {
   const [recordingState, setRecordingState] = useState<RecordingState>('idle');
   const [audioSrc, setAudioSrc] = useState<string | null>(null);
   const [callTime, setCallTime] = useState(0);
-  const [permissionState, setPermissionState] = useState<PermissionState>('prompt');
+  const [permissionState, setPermissionState] =
+    useState<PermissionState>('prompt');
 
   const audioRef = useRef<HTMLAudioElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -78,7 +78,7 @@ export default function CallScreen() {
       stream.getTracks().forEach((track) => track.stop());
       setPermissionState('granted');
     } catch (error: any) {
-      console.error('Microphone access error:', error);
+      console.error('Microphone access error:', error.name, error.message);
       if (error.name === 'NotFoundError') {
         setPermissionState('not_found');
       } else {
@@ -86,19 +86,24 @@ export default function CallScreen() {
       }
     }
   };
-  
+
   useEffect(() => {
     // On initial load, try to get permission to set the initial state
     requestMicrophonePermission();
   }, []);
-  
+
   useEffect(() => {
+    let timer: NodeJS.Timeout;
     if (permissionState === 'granted') {
-      const timer = setInterval(() => {
+      timer = setInterval(() => {
         setCallTime((prevTime) => prevTime + 1);
       }, 1000);
-      return () => clearInterval(timer);
     }
+    return () => {
+      if (timer) {
+        clearInterval(timer);
+      }
+    };
   }, [permissionState]);
 
   const formatTime = (seconds: number) => {
@@ -157,74 +162,63 @@ export default function CallScreen() {
     });
     setRecordingState('saved');
   };
-  
-  const startRecording = () => {
-    if (permissionState !== 'granted') {
+
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaRecorderRef.current = new MediaRecorder(stream);
+      audioChunksRef.current = [];
+
+      mediaRecorderRef.current.ondataavailable = (event) => {
+        audioChunksRef.current.push(event.data);
+      };
+
+      mediaRecorderRef.current.onstop = async () => {
+        setRecordingState('loading');
+        const audioBlob = new Blob(audioChunksRef.current, {
+          type: 'audio/wav',
+        });
+        const reader = new FileReader();
+        reader.readAsDataURL(audioBlob);
+        reader.onloadend = async () => {
+          const base64Audio = reader.result as string;
+          const values = form.getValues();
+          const result = await getAlteredVoiceAction({
+            ...values,
+            text: base64Audio,
+          });
+
+          if (result.error) {
+            toast({
+              variant: 'destructive',
+              title: 'Error',
+              description: result.error,
+            });
+            resetState();
+          } else if (result.audioDataUri) {
+            setAudioSrc(result.audioDataUri);
+            toast({
+              title: '¡Éxito!',
+              description: 'Tu voz alterada ha sido generada.',
+            });
+            setRecordingState('playing');
+          }
+        };
+        stream.getTracks().forEach((track) => track.stop());
+      };
+
+      mediaRecorderRef.current.start();
+      setRecordingState('recording');
+    } catch (error) {
+      console.error('Microphone access error:', error);
       toast({
         variant: 'destructive',
         title: 'Error de Micrófono',
-        description: 'No se puede grabar sin acceso al micrófono. Por favor, comprueba los permisos.',
+        description:
+          'No se pudo acceder al micrófono. Por favor, comprueba los permisos.',
       });
-      return;
     }
-    navigator.mediaDevices
-      .getUserMedia({ audio: true })
-      .then((stream) => {
-        mediaRecorderRef.current = new MediaRecorder(stream);
-        audioChunksRef.current = [];
-
-        mediaRecorderRef.current.ondataavailable = (event) => {
-          audioChunksRef.current.push(event.data);
-        };
-
-        mediaRecorderRef.current.onstop = async () => {
-          setRecordingState('loading');
-          const audioBlob = new Blob(audioChunksRef.current, {
-            type: 'audio/wav',
-          });
-          const reader = new FileReader();
-          reader.readAsDataURL(audioBlob);
-          reader.onloadend = async () => {
-            const base64Audio = reader.result as string;
-            const values = form.getValues();
-            const result = await getAlteredVoiceAction({
-              ...values,
-              text: base64Audio,
-            });
-
-            if (result.error) {
-              toast({
-                variant: 'destructive',
-                title: 'Error',
-                description: result.error,
-              });
-              resetState();
-            } else if (result.audioDataUri) {
-              setAudioSrc(result.audioDataUri);
-              toast({
-                title: '¡Éxito!',
-                description: 'Tu voz alterada ha sido generada.',
-              });
-              setRecordingState('playing');
-            }
-          };
-           stream.getTracks().forEach(track => track.stop());
-        };
-
-        mediaRecorderRef.current.start();
-        setRecordingState('recording');
-      })
-      .catch((error) => {
-        console.error('Microphone access error:', error);
-        toast({
-          variant: 'destructive',
-          title: 'Error de Micrófono',
-          description:
-            'No se pudo acceder al micrófono. Por favor, comprueba los permisos.',
-        });
-      });
   };
-
 
   const stopRecording = () => {
     if (
@@ -279,7 +273,7 @@ export default function CallScreen() {
       <Card className="w-full max-w-md mx-auto rounded-3xl shadow-2xl overflow-hidden border-4 border-card text-center">
         <CardHeader>
           <div className="flex justify-center">
-             <MicOff size={48} className="text-destructive" />
+            <MicOff size={48} className="text-destructive" />
           </div>
           <CardTitle className="text-2xl pt-4">Micrófono No Disponible</CardTitle>
           <CardDescription>
@@ -287,48 +281,65 @@ export default function CallScreen() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-           {permissionState === 'not_found' && (
-             <Alert variant="destructive" className="mt-4">
-               <AlertCircle className="h-4 w-4" />
-                <AlertTitle>No se encontró ningún micrófono</AlertTitle>
-                <AlertDescription>
-                  Asegúrate de que tu micrófono esté conectado y habilitado en la configuración de tu sistema.
-                </AlertDescription>
+          {permissionState === 'not_found' && (
+            <Alert variant="destructive" className="mt-4">
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>No se encontró ningún micrófono</AlertTitle>
+              <AlertDescription>
+                Asegúrate de que tu micrófono esté conectado y habilitado en la
+                configuración de tu sistema.
+              </AlertDescription>
             </Alert>
-           )}
-           {permissionState === 'denied' && (
-             <Alert variant="destructive" className="mt-4">
-               <AlertCircle className="h-4 w-4" />
-                <AlertTitle>Acceso Denegado</AlertTitle>
-                <AlertDescription>
-                  Debes habilitar el permiso del micrófono en la configuración de tu navegador para continuar.
-                </AlertDescription>
+          )}
+          {permissionState === 'denied' && (
+            <Alert variant="destructive" className="mt-4">
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>Acceso Denegado</AlertTitle>
+              <AlertDescription>
+                Debes habilitar el permiso del micrófono en la configuración de
+                tu navegador para continuar.
+              </AlertDescription>
             </Alert>
-           )}
-           {permissionState === 'prompt' && (
+          )}
+          {permissionState === 'prompt' && (
             <div className="bg-muted p-4 rounded-lg text-left space-y-4">
-                <div className="flex items-start">
-                    <div className="flex-shrink-0 w-6 h-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center mr-3">1</div>
-                    <p className="text-sm">Haz clic en "Permitir Micrófono" para activar la protección.</p>
+              <div className="flex items-start">
+                <div className="flex-shrink-0 w-6 h-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center mr-3">
+                  1
                 </div>
-                <div className="flex items-start">
-                    <div className="flex-shrink-0 w-6 h-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center mr-3">2</div>
-                    <p className="text-sm">Selecciona "Permitir" en la ventana que aparecerá en tu navegador.</p>
+                <p className="text-sm">
+                  Haz clic en "Permitir Micrófono" para activar la protección.
+                </p>
+              </div>
+              <div className="flex items-start">
+                <div className="flex-shrink-0 w-6 h-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center mr-3">
+                  2
                 </div>
+                <p className="text-sm">
+                  Selecciona "Permitir" en la ventana que aparecerá en tu
+                  navegador.
+                </p>
+              </div>
             </div>
-           )}
+          )}
         </CardContent>
         <CardFooter className="flex-col gap-4">
-          <Button onClick={requestMicrophonePermission} className="w-full" size="lg" disabled={permissionState === 'not_found'}>
+          <Button
+            onClick={requestMicrophonePermission}
+            className="w-full"
+            size="lg"
+            disabled={permissionState === 'not_found'}
+          >
             <Mic className="mr-2 h-5 w-5" />
             Permitir Micrófono
           </Button>
-           <p className="text-xs text-muted-foreground">Tu privacidad es importante. Solo accedemos al micrófono cuando grabas.</p>
+          <p className="text-xs text-muted-foreground">
+            Tu privacidad es importante. Solo accedemos al micrófono cuando grabas.
+          </p>
         </CardFooter>
       </Card>
     );
   }
-
 
   return (
     <Card className="w-full max-w-md mx-auto rounded-3xl shadow-2xl overflow-hidden border-4 border-card">
@@ -364,7 +375,12 @@ export default function CallScreen() {
 
         <Form {...form}>
           <form onSubmit={(e) => e.preventDefault()} className="space-y-6">
-            <fieldset disabled={!isEffectOn || (recordingState !== 'idle' && recordingState !== 'saved') }>
+            <fieldset
+              disabled={
+                !isEffectOn ||
+                (recordingState !== 'idle' && recordingState !== 'saved')
+              }
+            >
               <FormField
                 control={form.control}
                 name="gender"
@@ -385,7 +401,7 @@ export default function CallScreen() {
                           />
                           <Label
                             htmlFor="hero"
-                            className="flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary"
+                            className="flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary cursor-pointer"
                           >
                             🦸 Héroe
                           </Label>
@@ -398,7 +414,7 @@ export default function CallScreen() {
                           />
                           <Label
                             htmlFor="incognito"
-                            className="flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary"
+                            className="flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary cursor-pointer"
                           >
                             🎭 Incógnito
                           </Label>
@@ -411,7 +427,7 @@ export default function CallScreen() {
                           />
                           <Label
                             htmlFor="robot"
-                            className="flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary"
+                            className="flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary cursor-pointer"
                           >
                             🤖 Robot
                           </Label>
@@ -439,8 +455,10 @@ export default function CallScreen() {
                 {getRecordButtonIcon()}
               </Button>
               <p className="text-sm text-muted-foreground mt-2 h-4">
-                {recordingState === 'recording' && 'Grabando... pulsa para parar.'}
-                {(recordingState === 'idle' || recordingState === 'saved') && 'Pulsa para grabar y probar un perfil.'}
+                {recordingState === 'recording' &&
+                  'Grabando... pulsa para parar.'}
+                {(recordingState === 'idle' || recordingState === 'saved') &&
+                  'Pulsa para grabar y probar un perfil.'}
                 {recordingState === 'loading' && 'Procesando...'}
                 {recordingState === 'playing' && 'Reproduciendo voz alterada.'}
               </p>
@@ -457,12 +475,18 @@ export default function CallScreen() {
             >
               Your browser does not support the audio element.
             </audio>
-            {recordingState !== 'recording' && recordingState !== 'loading' && (
-              <Button onClick={handleSaveVoice} disabled={!user || recordingState === 'saved'}>
-                <Save className="mr-2 h-4 w-4" />
-                {recordingState === 'saved' ? '¡Voz Guardada!' : 'Guardar Voz'}
-              </Button>
-            )}
+            {recordingState !== 'recording' &&
+              recordingState !== 'loading' && (
+                <Button
+                  onClick={handleSaveVoice}
+                  disabled={!user || recordingState === 'saved'}
+                >
+                  <Save className="mr-2 h-4 w-4" />
+                  {recordingState === 'saved'
+                    ? '¡Voz Guardada!'
+                    : 'Guardar Voz'}
+                </Button>
+              )}
           </div>
         )}
       </CardContent>
@@ -473,11 +497,11 @@ export default function CallScreen() {
         </Button>
         <Button
           variant="destructive"
-          className="flex-1 bg-destructive hover:bg-destructive/90 text-destructive-foreground font-bold"
+          className="flex-1 font-bold"
           aria-label="End call"
         >
-          <AlertTriangle className="h-5 w-5 mr-2" />
-          DESCONEXIÓN
+          <PhoneOff className="h-5 w-5 mr-2" />
+          Finalizar
         </Button>
       </CardFooter>
     </Card>
