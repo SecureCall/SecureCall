@@ -55,6 +55,10 @@ const formSchema = z.object({
 type RecordingState = 'idle' | 'recording' | 'playing' | 'loading' | 'saved';
 type PermissionState = 'prompt' | 'granted' | 'denied' | 'not_found';
 
+// Sample audio data URI (a short, silent WAV file) for testing purposes.
+const SAMPLE_AUDIO_DATA_URI = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA";
+
+
 export default function CallScreen() {
   const [isEffectOn, setIsEffectOn] = useState(true);
   const [recordingState, setRecordingState] = useState<RecordingState>('idle');
@@ -82,14 +86,14 @@ export default function CallScreen() {
       stream.getTracks().forEach((track) => track.stop());
       setPermissionState('granted');
     } catch (error: any) {
-      if (error.name === 'NotFoundError') {
-        setPermissionState('not_found');
-      } else if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
-        setPermissionState('denied');
-      } else {
-        console.error('Microphone access error:', error.name, error.message);
-        setPermissionState('denied'); 
-      }
+        if (error.name === 'NotFoundError') {
+            setPermissionState('not_found');
+        } else if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
+            setPermissionState('denied');
+        } else {
+            console.error('Microphone access error:', error.name, error.message);
+            setPermissionState('denied');
+        }
     }
   };
 
@@ -99,17 +103,17 @@ export default function CallScreen() {
 
   useEffect(() => {
     let timer: NodeJS.Timeout;
-    if (permissionState === 'granted') {
-      timer = setInterval(() => {
+    // Start timer regardless of mic permission for simulation purposes
+    timer = setInterval(() => {
         setCallTime((prevTime) => prevTime + 1);
-      }, 1000);
-    }
+    }, 1000);
+    
     return () => {
       if (timer) {
         clearInterval(timer);
       }
     };
-  }, [permissionState]);
+  }, []);
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60)
@@ -167,19 +171,55 @@ export default function CallScreen() {
     });
     setRecordingState('saved');
   };
+  
+  const simulateRecordingAndAlteration = async () => {
+    setRecordingState('loading');
+    toast({
+      title: 'Simulación de Grabación',
+      description: 'Usando audio de muestra para generar voz alterada...',
+    });
+
+    const values = form.getValues();
+    const result = await getAlteredVoiceAction({
+      ...values,
+      text: SAMPLE_AUDIO_DATA_URI, // Use sample data
+    });
+
+    if (result.error) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: result.error,
+      });
+      resetState();
+    } else if (result.audioDataUri) {
+      setAudioSrc(result.audioDataUri);
+      toast({
+        title: '¡Éxito!',
+        description: 'Tu voz alterada ha sido generada.',
+      });
+      setRecordingState('playing');
+    }
+  };
 
   const startRecording = async () => {
     if (permissionState !== 'granted') {
-      await requestMicrophonePermission();
-      if (permissionState !== 'granted') {
-        toast({
-            variant: 'destructive',
-            title: 'Error de Micrófono',
-            description:
-            'No se pudo acceder al micrófono. Por favor, comprueba los permisos.',
-        });
+       if (permissionState === 'not_found') {
+        // If no mic is found, proceed with simulation
+        await simulateRecordingAndAlteration();
         return;
-      }
+       }
+       await requestMicrophonePermission(); // Re-request if denied or prompt
+       // If still not granted, show a toast and exit. The UI will already show the error state.
+       if(permissionState !== 'granted' && permissionState !== 'not_found') {
+         toast({
+             variant: 'destructive',
+             title: 'Error de Micrófono',
+             description:
+             'No se pudo acceder al micrófono. Por favor, comprueba los permisos.',
+         });
+         return;
+       }
     }
       
     try {
@@ -229,11 +269,12 @@ export default function CallScreen() {
       setRecordingState('recording');
     } catch (error) {
       console.error('Microphone access error:', error);
+      // This catch block is for unexpected errors during start, not for permission denial handled earlier.
       toast({
         variant: 'destructive',
-        title: 'Error de Micrófono',
+        title: 'Error Inesperado',
         description:
-          'No se pudo acceder al micrófono. Por favor, comprueba los permisos.',
+          'Ocurrió un error al intentar iniciar la grabación.',
       });
     }
   };
@@ -286,29 +327,20 @@ export default function CallScreen() {
     }
   };
 
-  if (permissionState !== 'granted') {
+  // Dedicated permission screens
+  if (permissionState === 'denied' || (permissionState === 'prompt' && recordingState === 'idle')) {
     return (
       <Card className="w-full max-w-md mx-auto rounded-3xl shadow-2xl overflow-hidden border-4 border-card text-center">
         <CardHeader>
           <div className="flex justify-center">
             <MicOff size={48} className="text-destructive" />
           </div>
-          <CardTitle className="text-2xl pt-4">Micrófono No Disponible</CardTitle>
+          <CardTitle className="text-2xl pt-4">Micrófono Requerido</CardTitle>
           <CardDescription>
             Para modificar tu voz, SecureCall necesita acceso al micrófono.
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {permissionState === 'not_found' && (
-            <Alert variant="destructive" className="mt-4">
-              <AlertCircle className="h-4 w-4" />
-              <AlertTitle>No se encontró ningún micrófono</AlertTitle>
-              <AlertDescription>
-                Asegúrate de que tu micrófono esté conectado y habilitado en la
-                configuración de tu sistema.
-              </AlertDescription>
-            </Alert>
-          )}
           {permissionState === 'denied' && (
             <Alert variant="destructive" className="mt-4">
               <AlertCircle className="h-4 w-4" />
@@ -359,6 +391,7 @@ export default function CallScreen() {
     );
   }
 
+  // Main call screen
   return (
     <Card className="w-full max-w-md mx-auto rounded-3xl shadow-2xl overflow-hidden border-4 border-card">
       <CardHeader className="items-center text-center pt-8">
@@ -378,6 +411,15 @@ export default function CallScreen() {
         </CardDescription>
       </CardHeader>
       <CardContent className="p-6">
+        {permissionState === 'not_found' && (
+             <Alert variant="destructive" className="mt-4 mb-4">
+                <AlertCircle className="h-4 w-4" />
+                <AlertTitle>No se encontró micrófono</AlertTitle>
+                <AlertDescription>
+                  Se usará audio de muestra para las pruebas.
+                </AlertDescription>
+              </Alert>
+        )}
         <div className="flex items-center justify-center space-x-3 mb-6 p-3 rounded-lg bg-muted/50">
           <Shield className="text-accent h-5 w-5" />
           <Label htmlFor="effect-switch" className="font-medium">
