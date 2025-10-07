@@ -133,59 +133,62 @@ export default function CallScreen() {
     setRecordingState('saved');
   };
 
-  const startRecording = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mediaRecorderRef.current = new MediaRecorder(stream);
-      audioChunksRef.current = [];
+  const startRecording = () => {
+    navigator.mediaDevices
+      .getUserMedia({ audio: true })
+      .then((stream) => {
+        mediaRecorderRef.current = new MediaRecorder(stream);
+        audioChunksRef.current = [];
 
-      mediaRecorderRef.current.ondataavailable = (event) => {
-        audioChunksRef.current.push(event.data);
-      };
-
-      mediaRecorderRef.current.onstop = async () => {
-        setRecordingState('loading');
-        const audioBlob = new Blob(audioChunksRef.current, {
-          type: 'audio/wav',
-        });
-        const reader = new FileReader();
-        reader.readAsDataURL(audioBlob);
-        reader.onloadend = async () => {
-          const base64Audio = reader.result as string;
-          const values = form.getValues();
-          const result = await getAlteredVoiceAction({
-            ...values,
-            text: base64Audio,
-          });
-
-          if (result.error) {
-            toast({
-              variant: 'destructive',
-              title: 'Error',
-              description: result.error,
-            });
-            resetState();
-          } else if (result.audioDataUri) {
-            setAudioSrc(result.audioDataUri);
-            toast({
-              title: '¡Éxito!',
-              description: 'Tu voz alterada ha sido generada.',
-            });
-            setRecordingState('playing');
-          }
+        mediaRecorderRef.current.ondataavailable = (event) => {
+          audioChunksRef.current.push(event.data);
         };
-      };
 
-      mediaRecorderRef.current.start();
-      setRecordingState('recording');
-    } catch (error) {
-      toast({
-        variant: 'destructive',
-        title: 'Error de Micrófono',
-        description:
-          'No se pudo acceder al micrófono. Por favor, comprueba los permisos.',
+        mediaRecorderRef.current.onstop = async () => {
+          setRecordingState('loading');
+          const audioBlob = new Blob(audioChunksRef.current, {
+            type: 'audio/wav',
+          });
+          const reader = new FileReader();
+          reader.readAsDataURL(audioBlob);
+          reader.onloadend = async () => {
+            const base64Audio = reader.result as string;
+            const values = form.getValues();
+            const result = await getAlteredVoiceAction({
+              ...values,
+              text: base64Audio,
+            });
+
+            if (result.error) {
+              toast({
+                variant: 'destructive',
+                title: 'Error',
+                description: result.error,
+              });
+              resetState();
+            } else if (result.audioDataUri) {
+              setAudioSrc(result.audioDataUri);
+              toast({
+                title: '¡Éxito!',
+                description: 'Tu voz alterada ha sido generada.',
+              });
+              setRecordingState('playing');
+            }
+          };
+        };
+
+        mediaRecorderRef.current.start();
+        setRecordingState('recording');
+      })
+      .catch((error) => {
+        console.log('Microphone access error:', error);
+        toast({
+          variant: 'destructive',
+          title: 'Error de Micrófono',
+          description:
+            'No se pudo acceder al micrófono. Por favor, comprueba los permisos.',
+        });
       });
-    }
   };
 
   const stopRecording = () => {
