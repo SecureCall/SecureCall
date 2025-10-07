@@ -1,0 +1,250 @@
+
+'use client';
+
+import { zodResolver } from '@hookform/resolvers/zod';
+import {
+  Grid3x3,
+  Loader2,
+  MicOff,
+  PhoneOff,
+  Play,
+  Volume2,
+} from 'lucide-react';
+import Image from 'next/image';
+import { useEffect, useRef, useState } from 'react';
+import { useForm } from 'react-hook-form';
+import { z } from 'zod';
+
+import { getAlteredVoiceAction } from '@/app/actions';
+import { PlaceHolderImages } from '@/lib/placeholder-images';
+import { Button } from '@/components/ui/button';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '@/components/ui/form';
+import { Label } from '@/components/ui/label';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Switch } from '@/components/ui/switch';
+import { Textarea } from '@/components/ui/textarea';
+import { useToast } from '@/hooks/use-toast';
+import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
+
+const formSchema = z.object({
+  text: z.string().min(1, 'Please enter some text.'),
+  gender: z.enum(['male', 'female', 'custom'], {
+    required_error: 'You need to select a voice type.',
+  }),
+});
+
+export default function CallScreen() {
+  const [isEffectOn, setIsEffectOn] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
+  const [audioSrc, setAudioSrc] = useState<string | null>(null);
+  const [callTime, setCallTime] = useState(0);
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const { toast } = useToast();
+
+  const avatar = PlaceHolderImages.find((img) => img.id === 'avatar-1');
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCallTime((prevTime) => prevTime + 1);
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, []);
+
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60)
+      .toString()
+      .padStart(2, '0');
+    const secs = (seconds % 60).toString().padStart(2, '0');
+    return `${mins}:${secs}`;
+  };
+
+  const form = useForm<z.infer<typeof formSchema>>({
+    resolver: zodResolver(formSchema),
+    defaultValues: {
+      text: "Hello, this is a test of the Secure Call voice alteration system. I can now say anything I want, and my voice will be protected.",
+      gender: 'male',
+    },
+  });
+
+  async function onSubmit(values: z.infer<typeof formSchema>) {
+    setIsLoading(true);
+    setAudioSrc(null);
+    const result = await getAlteredVoiceAction(values);
+    setIsLoading(false);
+
+    if (result.error) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: result.error,
+      });
+    } else if (result.audioDataUri) {
+      setAudioSrc(result.audioDataUri);
+      toast({
+        title: 'Success!',
+        description: 'Your altered voice has been generated.',
+      });
+    }
+  }
+
+  useEffect(() => {
+    if (audioSrc && audioRef.current) {
+      audioRef.current.load();
+      audioRef.current.play().catch((e) => console.error('Audio play failed', e));
+    }
+  }, [audioSrc]);
+
+  return (
+    <Card className="w-full max-w-md mx-auto rounded-3xl shadow-2xl overflow-hidden border-4 border-card">
+      <CardHeader className="items-center text-center pt-8">
+        <Avatar className="w-24 h-24 border-4 border-muted">
+          {avatar && (
+            <AvatarImage
+              src={avatar.imageUrl}
+              alt={avatar.description}
+              data-ai-hint={avatar.imageHint}
+            />
+          )}
+          <AvatarFallback>JD</AvatarFallback>
+        </Avatar>
+        <CardTitle className="text-3xl font-bold pt-4">Jane Doe</CardTitle>
+        <CardDescription className="text-lg text-primary">
+          {formatTime(callTime)}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="p-6">
+        <div className="flex items-center justify-center space-x-3 mb-6 p-3 rounded-lg bg-muted/50">
+          <Label htmlFor="effect-switch" className="font-medium">
+            Voice Alteration
+          </Label>
+          <Switch
+            id="effect-switch"
+            checked={isEffectOn}
+            onCheckedChange={setIsEffectOn}
+            aria-label="Toggle voice alteration effect"
+          />
+        </div>
+
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+            <fieldset disabled={!isEffectOn || isLoading}>
+              <FormField
+                control={form.control}
+                name="text"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Text to Speak</FormLabel>
+                    <FormControl>
+                      <Textarea
+                        placeholder="Enter the text you want to say..."
+                        className="resize-none min-h-[100px]"
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="gender"
+                render={({ field }) => (
+                  <FormItem className="space-y-3">
+                    <FormLabel>Voice Profile</FormLabel>
+                    <FormControl>
+                      <RadioGroup
+                        onValueChange={field.onChange}
+                        defaultValue={field.value}
+                        className="flex items-center gap-6"
+                      >
+                        <FormItem className="flex items-center space-x-2 space-y-0">
+                          <FormControl>
+                            <RadioGroupItem value="male" id="male" />
+                          </FormControl>
+                          <Label htmlFor="male">Male</Label>
+                        </FormItem>
+                        <FormItem className="flex items-center space-x-2 space-y-0">
+                          <FormControl>
+                            <RadioGroupItem value="female" id="female" />
+                          </FormControl>
+                          <Label htmlFor="female">Female</Label>
+                        </FormItem>
+                      </RadioGroup>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </fieldset>
+
+            <div className="pt-2">
+              <Button
+                type="submit"
+                className="w-full bg-accent hover:bg-accent/90 text-accent-foreground font-bold text-lg py-6 rounded-xl"
+                disabled={!isEffectOn || isLoading}
+                size="lg"
+              >
+                {isLoading ? (
+                  <>
+                    <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                    Generating...
+                  </>
+                ) : (
+                  <>
+                    <Play className="mr-2 h-5 w-5" />
+                    Generate & Play
+                  </>
+                )}
+              </Button>
+            </div>
+          </form>
+        </Form>
+        {audioSrc && (
+          <div className="mt-6">
+             <audio ref={audioRef} controls className="w-full" src={audioSrc}>
+              Your browser does not support the audio element.
+            </audio>
+          </div>
+        )}
+      </CardContent>
+      <CardFooter className="grid grid-cols-4 gap-2 bg-muted/50 p-4">
+        <Button variant="ghost" className="flex flex-col h-auto p-2" aria-label="Mute">
+          <MicOff className="h-6 w-6" />
+          <span className="text-xs mt-1">Mute</span>
+        </Button>
+        <Button variant="ghost" className="flex flex-col h-auto p-2" aria-label="Keypad">
+          <Grid3x3 className="h-6 w-6" />
+          <span className="text-xs mt-1">Keypad</span>
+        </Button>
+        <Button variant="ghost" className="flex flex-col h-auto p-2" aria-label="Speaker">
+          <Volume2 className="h-6 w-6" />
+          <span className="text-xs mt-1">Speaker</span>
+        </Button>
+        <Button
+          variant="destructive"
+          className="flex flex-col h-auto p-2 bg-red-600 hover:bg-red-700"
+          aria-label="End call"
+        >
+          <PhoneOff className="h-6 w-6" />
+          <span className="text-xs mt-1">End</span>
+        </Button>
+      </CardFooter>
+    </Card>
+  );
+}
