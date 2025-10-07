@@ -1,0 +1,175 @@
+{
+  "entities": {
+    "UserProfile": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "UserProfile",
+      "type": "object",
+      "description": "Represents a user's profile in the Secure Call application.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the user profile."
+        },
+        "securityPreferences": {
+          "type": "string",
+          "description": "Reference to UserSetting. (Relationship: UserProfile 1:1 UserSetting)",
+          "format": "uuid"
+        }
+      },
+      "required": [
+        "id"
+      ]
+    },
+    "VoiceProfile": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "VoiceProfile",
+      "type": "object",
+      "description": "Represents a voice profile with specific parameters for voice alteration.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the voice profile."
+        },
+        "userId": {
+          "type": "string",
+          "description": "Reference to UserProfile. (Relationship: UserProfile 1:N VoiceProfile)"
+        },
+        "name": {
+          "type": "string",
+          "description": "Name of the voice profile."
+        },
+        "pitchShift": {
+          "type": "number",
+          "description": "Pitch shift parameter for voice alteration (-12 to +12 semitones)."
+        },
+        "formantShift": {
+          "type": "number",
+          "description": "Formant shift parameter for voice alteration (0.5 to 2.0)."
+        },
+        "tempo": {
+          "type": "number",
+          "description": "Tempo parameter for voice alteration (0.7 to 1.3)."
+        },
+        "resonance": {
+          "type": "number",
+          "description": "Resonance parameter for voice alteration (0.8 to 1.2)."
+        },
+        "effects": {
+          "type": "array",
+          "description": "Array of effects applied to the voice.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "isCustom": {
+          "type": "boolean",
+          "description": "Indicates whether the voice profile is custom or default."
+        },
+        "createdBy": {
+          "type": "string",
+          "description": "User ID who created the custom voice profile."
+        },
+        "securityLevel": {
+          "type": "string",
+          "description": "Security level of the voice profile (e.g., low, medium, high)."
+        }
+      },
+      "required": [
+        "id",
+        "userId",
+        "name"
+      ]
+    },
+    "UserSettings": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "UserSettings",
+      "type": "object",
+      "description": "Represents user-specific settings, including security preferences.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the user settings."
+        },
+        "userId": {
+          "type": "string",
+          "description": "Reference to UserProfile. (Relationship: UserProfile 1:1 UserSetting)"
+        },
+        "securityPreferences": {
+          "type": "string",
+          "description": "JSON blob for security preferences"
+        }
+      },
+      "required": [
+        "id",
+        "userId"
+      ]
+    }
+  },
+  "auth": {
+    "providers": [
+      "password",
+      "anonymous"
+    ]
+  },
+  "firestore": {
+    "structure": [
+      {
+        "path": "/users/{userId}/user_settings/{userSettingsId}",
+        "definition": {
+          "entityName": "UserSettings",
+          "schema": {
+            "$ref": "#/backend/entities/UserSettings"
+          },
+          "description": "Stores user-specific settings and security preferences. Uses path-based ownership: only the user with the matching userId can read or write. This enables secure `list` operations.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The ID of the user."
+            },
+            {
+              "name": "userSettingsId",
+              "description": "The ID of the user settings document."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/users/{userId}/voice_profiles/{voiceProfileId}",
+        "definition": {
+          "entityName": "VoiceProfile",
+          "schema": {
+            "$ref": "#/backend/entities/VoiceProfile"
+          },
+          "description": "Stores voice profiles associated with a user. Uses path-based ownership: only the user with the matching userId can read or write. This enables secure `list` operations.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The ID of the user."
+            },
+            {
+              "name": "voiceProfileId",
+              "description": "The ID of the voice profile."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/voice_parameters/{voiceParameterId}",
+        "definition": {
+          "entityName": "VoiceParameters",
+          "schema": {
+            "$ref": "#/backend/entities/VoiceParameters"
+          },
+          "description": "Stores global voice parameters and presets. Read access is allowed for all authenticated users, but write access is restricted.",
+          "params": [
+            {
+              "name": "voiceParameterId",
+              "description": "The ID of the voice parameter document."
+            }
+          ]
+        }
+      }
+    ],
+    "reasoning": "The Firestore structure is designed to prioritize authorization independence, clarity, and security, aligning with the specified principles. It leverages path-based ownership for user-specific data and avoids `get()` calls in security rules by denormalizing authorization context where needed. Specifically, all voice profiles are stored under the respective user's ID to ensure that only the authenticated user has access. This achieves authorization independence. The design also segregates data based on access requirements (e.g., user settings vs. voice profiles) to maintain a homogeneous security posture.\n\nThe structure supports the required QAPs (Rules are not Filters) by using path-based ownership for user data, making `list` operations secure as the rules can simply check if `request.auth.uid == userId` without needing to filter based on document content. The use of dedicated subcollections for default and custom voices allows for different rules if necessary but maintains clear ownership by the user."
+  }
+}
