@@ -60,8 +60,7 @@ export default function CallScreen() {
   const [recordingState, setRecordingState] = useState<RecordingState>('idle');
   const [audioSrc, setAudioSrc] = useState<string | null>(null);
   const [callTime, setCallTime] = useState(0);
-  const [hasMicPermission, setHasMicPermission] = useState(false);
-
+  const [hasMicPermission, setHasMicPermission] = useState<boolean | null>(null);
 
   const audioRef = useRef<HTMLAudioElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -72,28 +71,49 @@ export default function CallScreen() {
 
   const avatar = PlaceHolderImages.find((img) => img.id === 'avatar-1');
 
+  const requestMicrophonePermission = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach((track) => track.stop()); // We only need to request permission
+      setHasMicPermission(true);
+    } catch (error) {
+      console.error('Microphone access was denied.', error);
+      setHasMicPermission(false);
+      toast({
+        variant: 'destructive',
+        title: 'Microphone Access Denied',
+        description: 'Please enable microphone access in your browser settings to use this feature.',
+      });
+    }
+  };
+  
   useEffect(() => {
-    const getMicPermission = async () => {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        stream.getTracks().forEach(track => track.stop());
+    // On initial load, check for permission status silently if possible
+    navigator.permissions?.query({ name: 'microphone' }).then(permissionStatus => {
+      if (permissionStatus.state === 'granted') {
         setHasMicPermission(true);
-      } catch (error) {
-        console.error("Microphone access denied:", error);
+      } else if (permissionStatus.state === 'denied') {
         setHasMicPermission(false);
+      } else {
+        setHasMicPermission(null); // Prompt needed
       }
-    };
-    getMicPermission();
+      permissionStatus.onchange = () => {
+        setHasMicPermission(permissionStatus.state === 'granted');
+      };
+    }).catch(() => {
+      // Fallback for browsers that don't support Permissions API
+      setHasMicPermission(null);
+    });
   }, []);
-
-
+  
   useEffect(() => {
-    const timer = setInterval(() => {
-      setCallTime((prevTime) => prevTime + 1);
-    }, 1000);
-
-    return () => clearInterval(timer);
-  }, []);
+    if (hasMicPermission) {
+      const timer = setInterval(() => {
+        setCallTime((prevTime) => prevTime + 1);
+      }, 1000);
+      return () => clearInterval(timer);
+    }
+  }, [hasMicPermission]);
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60)
@@ -135,7 +155,7 @@ export default function CallScreen() {
       isCustom: true,
       createdBy: user.uid,
       securityLevel: 'medium',
-      audioDataUri: audioSrc, // Saving the generated audio
+      audioDataUri: audioSrc,
     };
 
     const voiceDocRef = doc(
@@ -151,14 +171,14 @@ export default function CallScreen() {
     });
     setRecordingState('saved');
   };
-
+  
   const startRecording = () => {
     if (!hasMicPermission) {
-       toast({
-          variant: 'destructive',
-          title: 'Error de Micrófono',
-          description: 'No se puede grabar sin acceso al micrófono. Por favor, comprueba los permisos.',
-        });
+      toast({
+        variant: 'destructive',
+        title: 'Error de Micrófono',
+        description: 'No se puede grabar sin acceso al micrófono. Por favor, comprueba los permisos.',
+      });
       return;
     }
     navigator.mediaDevices
@@ -202,13 +222,14 @@ export default function CallScreen() {
               setRecordingState('playing');
             }
           };
+           stream.getTracks().forEach(track => track.stop());
         };
 
         mediaRecorderRef.current.start();
         setRecordingState('recording');
       })
       .catch((error) => {
-        console.log('Microphone access error:', error);
+        console.error('Microphone access error:', error);
         toast({
           variant: 'destructive',
           title: 'Error de Micrófono',
@@ -217,6 +238,7 @@ export default function CallScreen() {
         });
       });
   };
+
 
   const stopRecording = () => {
     if (
@@ -244,7 +266,7 @@ export default function CallScreen() {
 
   const handleMicButtonClick = () => {
     if (recordingState === 'idle' || recordingState === 'saved') {
-      setAudioSrc(null); // Clear previous audio
+      setAudioSrc(null);
       startRecording();
     } else if (recordingState === 'recording') {
       stopRecording();
@@ -266,6 +288,51 @@ export default function CallScreen() {
     }
   };
 
+  if (hasMicPermission === null || hasMicPermission === false) {
+    return (
+      <Card className="w-full max-w-md mx-auto rounded-3xl shadow-2xl overflow-hidden border-4 border-card text-center">
+        <CardHeader>
+          <div className="flex justify-center">
+             <MicOff size={48} className="text-destructive" />
+          </div>
+          <CardTitle className="text-2xl pt-4">Micrófono No Disponible</CardTitle>
+          <CardDescription>
+            Para modificar tu voz, SecureCall necesita acceso al micrófono.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="bg-muted p-4 rounded-lg text-left space-y-4">
+              <div className="flex items-start">
+                  <div className="flex-shrink-0 w-6 h-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center mr-3">1</div>
+                  <p className="text-sm">Haz clic en "Permitir Micrófono" para activar la protección.</p>
+              </div>
+              <div className="flex items-start">
+                  <div className="flex-shrink-0 w-6 h-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center mr-3">2</div>
+                  <p className="text-sm">Selecciona "Permitir" en la ventana que aparecerá en tu navegador.</p>
+              </div>
+          </div>
+           {hasMicPermission === false && (
+             <Alert variant="destructive" className="mt-4">
+               <AlertCircle className="h-4 w-4" />
+                <AlertTitle>Acceso Denegado</AlertTitle>
+                <AlertDescription>
+                  Debes habilitar el permiso del micrófono en la configuración de tu navegador para continuar.
+                </AlertDescription>
+            </Alert>
+           )}
+        </CardContent>
+        <CardFooter className="flex-col gap-4">
+          <Button onClick={requestMicrophonePermission} className="w-full" size="lg">
+            <Mic className="mr-2 h-5 w-5" />
+            Permitir Micrófono
+          </Button>
+           <p className="text-xs text-muted-foreground">Tu privacidad es importante. Solo accedemos al micrófono cuando grabas.</p>
+        </CardFooter>
+      </Card>
+    );
+  }
+
+
   return (
     <Card className="w-full max-w-md mx-auto rounded-3xl shadow-2xl overflow-hidden border-4 border-card">
       <CardHeader className="items-center text-center pt-8">
@@ -285,15 +352,6 @@ export default function CallScreen() {
         </CardDescription>
       </CardHeader>
       <CardContent className="p-6">
-        {!hasMicPermission && (
-          <Alert variant="destructive" className="mb-4">
-            <AlertCircle className="h-4 w-4" />
-            <AlertTitle>Acceso al Micrófono Requerido</AlertTitle>
-            <AlertDescription>
-              Para grabar tu voz, debes permitir el acceso al micrófono en la configuración de tu navegador.
-            </AlertDescription>
-          </Alert>
-        )}
         <div className="flex items-center justify-center space-x-3 mb-6 p-3 rounded-lg bg-muted/50">
           <Shield className="text-accent h-5 w-5" />
           <Label htmlFor="effect-switch" className="font-medium">
@@ -309,7 +367,7 @@ export default function CallScreen() {
 
         <Form {...form}>
           <form onSubmit={(e) => e.preventDefault()} className="space-y-6">
-            <fieldset disabled={!isEffectOn || (recordingState !== 'idle' && recordingState !== 'saved') || !hasMicPermission }>
+            <fieldset disabled={!isEffectOn || (recordingState !== 'idle' && recordingState !== 'saved') }>
               <FormField
                 control={form.control}
                 name="gender"
@@ -377,8 +435,7 @@ export default function CallScreen() {
                 disabled={
                   !isEffectOn ||
                   recordingState === 'playing' ||
-                  recordingState === 'loading' ||
-                  !hasMicPermission
+                  recordingState === 'loading'
                 }
                 size="icon"
               >
@@ -386,8 +443,7 @@ export default function CallScreen() {
               </Button>
               <p className="text-sm text-muted-foreground mt-2 h-4">
                 {recordingState === 'recording' && 'Grabando... pulsa para parar.'}
-                {(recordingState === 'idle' || recordingState === 'saved') && hasMicPermission && 'Pulsa para grabar y probar un perfil.'}
-                {!hasMicPermission && 'Permiso de micrófono denegado.'}
+                {(recordingState === 'idle' || recordingState === 'saved') && 'Pulsa para grabar y probar un perfil.'}
                 {recordingState === 'loading' && 'Procesando...'}
                 {recordingState === 'playing' && 'Reproduciendo voz alterada.'}
               </p>
