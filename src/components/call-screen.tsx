@@ -2,14 +2,15 @@
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import {
+  AlertTriangle,
   Grid3x3,
   Loader2,
   Mic,
   MicOff,
   PhoneOff,
+  Shield,
   Square,
   Volume2,
-  VolumeX,
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
@@ -41,10 +42,9 @@ import { useToast } from '@/hooks/use-toast';
 import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
 
 const formSchema = z.object({
-  gender: z.enum(['male', 'female', 'custom'], {
+  gender: z.enum(['hero', 'incognito', 'robot'], {
     required_error: 'You need to select a voice type.',
   }),
-  text: z.string(),
 });
 
 type RecordingState = 'idle' | 'recording' | 'playing' | 'loading';
@@ -82,8 +82,7 @@ export default function CallScreen() {
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      gender: 'male',
-      text: '',
+      gender: 'hero',
     },
   });
 
@@ -109,7 +108,7 @@ export default function CallScreen() {
           const values = form.getValues();
           const result = await getAlteredVoiceAction({
             ...values,
-            text: base64Audio,
+            text: base64Audio, // text is now audio data uri
           });
 
           if (result.error) {
@@ -137,7 +136,8 @@ export default function CallScreen() {
       toast({
         variant: 'destructive',
         title: 'Microphone Error',
-        description: 'Could not access the microphone. Please check permissions.',
+        description:
+          'Could not access the microphone. Please check permissions.',
       });
     }
   };
@@ -158,14 +158,14 @@ export default function CallScreen() {
       audioRef.current.onended = () => setRecordingState('idle');
     }
   }, [recordingState, audioSrc]);
-  
+
   const handleMicButtonClick = () => {
     if (recordingState === 'idle') {
       startRecording();
     } else if (recordingState === 'recording') {
       stopRecording();
     }
-  }
+  };
 
   const getRecordButtonIcon = () => {
     switch (recordingState) {
@@ -179,7 +179,7 @@ export default function CallScreen() {
       default:
         return <Mic className="h-8 w-8" />;
     }
-  }
+  };
 
   return (
     <Card className="w-full max-w-md mx-auto rounded-3xl shadow-2xl overflow-hidden border-4 border-card">
@@ -195,14 +195,15 @@ export default function CallScreen() {
           <AvatarFallback>JD</AvatarFallback>
         </Avatar>
         <CardTitle className="text-3xl font-bold pt-4">Jane Doe</CardTitle>
-        <CardDescription className="text-lg text-primary">
+        <CardDescription className="text-lg text-accent">
           {formatTime(callTime)}
         </CardDescription>
       </CardHeader>
       <CardContent className="p-6">
         <div className="flex items-center justify-center space-x-3 mb-6 p-3 rounded-lg bg-muted/50">
+          <Shield className="text-accent h-5 w-5" />
           <Label htmlFor="effect-switch" className="font-medium">
-            Voice Alteration
+            Protección {isEffectOn ? 'Activa' : 'Inactiva'}
           </Label>
           <Switch
             id="effect-switch"
@@ -213,40 +214,58 @@ export default function CallScreen() {
         </div>
 
         <Form {...form}>
-          <form
-            onSubmit={(e) => e.preventDefault()}
-            className="space-y-6"
-          >
+          <form onSubmit={(e) => e.preventDefault()} className="space-y-6">
             <fieldset disabled={!isEffectOn || recordingState !== 'idle'}>
               <FormField
                 control={form.control}
                 name="gender"
                 render={({ field }) => (
                   <FormItem className="space-y-3">
-                    <FormLabel>Voice Profile</FormLabel>
+                    <FormLabel>Perfiles de Voz</FormLabel>
                     <FormControl>
                       <RadioGroup
                         onValueChange={field.onChange}
                         defaultValue={field.value}
-                        className="flex items-center gap-6"
+                        className="grid grid-cols-3 gap-4"
                       >
-                        <FormItem className="flex items-center space-x-2 space-y-0">
-                          <FormControl>
-                            <RadioGroupItem value="male" id="male" />
-                          </FormControl>
-                          <Label htmlFor="male">Male</Label>
+                        <FormItem>
+                          <RadioGroupItem
+                            value="hero"
+                            id="hero"
+                            className="sr-only"
+                          />
+                          <Label
+                            htmlFor="hero"
+                            className="flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary"
+                          >
+                            🦸 Héroe
+                          </Label>
                         </FormItem>
-                        <FormItem className="flex items-center space-x-2 space-y-0">
-                          <FormControl>
-                            <RadioGroupItem value="female" id="female" />
-                          </FormControl>
-                          <Label htmlFor="female">Female</Label>
+                        <FormItem>
+                          <RadioGroupItem
+                            value="incognito"
+                            id="incognito"
+                            className="sr-only"
+                          />
+                          <Label
+                            htmlFor="incognito"
+                            className="flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary"
+                          >
+                            🎭 Incógnito
+                          </Label>
                         </FormItem>
-                        <FormItem className="flex items-center space-x-2 space-y-0">
-                          <FormControl>
-                            <RadioGroupItem value="custom" id="custom" />
-                          </FormControl>
-                          <Label htmlFor="custom">Custom</Label>
+                        <FormItem>
+                          <RadioGroupItem
+                            value="robot"
+                            id="robot"
+                            className="sr-only"
+                          />
+                          <Label
+                            htmlFor="robot"
+                            className="flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary"
+                          >
+                            🤖 Robot
+                          </Label>
                         </FormItem>
                       </RadioGroup>
                     </FormControl>
@@ -261,60 +280,54 @@ export default function CallScreen() {
                 type="button"
                 onClick={handleMicButtonClick}
                 className="w-20 h-20 rounded-full bg-accent hover:bg-accent/90 text-accent-foreground font-bold text-lg"
-                disabled={!isEffectOn || recordingState === 'playing' || recordingState === 'loading'}
+                disabled={
+                  !isEffectOn ||
+                  recordingState === 'playing' ||
+                  recordingState === 'loading'
+                }
                 size="icon"
               >
                 {getRecordButtonIcon()}
               </Button>
-               <p className="text-sm text-muted-foreground mt-2">
-                 {recordingState === 'recording' && 'Recording... Press to stop.'}
-                 {recordingState === 'idle' && 'Press to record.'}
-                 {recordingState === 'loading' && 'Processing...'}
-                 {recordingState === 'playing' && 'Playing back altered voice.'}
-               </p>
+              <p className="text-sm text-muted-foreground mt-2 h-4">
+                {recordingState === 'recording' && 'Grabando... pulsa para parar.'}
+                {recordingState === 'idle' && 'Pulsa para grabar.'}
+                {recordingState === 'loading' && 'Procesando...'}
+                {recordingState === 'playing' &&
+                  'Reproduciendo voz alterada.'}
+              </p>
             </div>
           </form>
         </Form>
         {audioSrc && (
           <div className="mt-6">
-            <audio ref={audioRef} controls className="w-full hidden" src={audioSrc}>
+            <audio
+              ref={audioRef}
+              controls
+              className="w-full hidden"
+              src={audioSrc}
+            >
               Your browser does not support the audio element.
             </audio>
           </div>
         )}
       </CardContent>
-      <CardFooter className="grid grid-cols-4 gap-2 bg-muted/50 p-4">
+      <CardFooter className="grid grid-cols-2 gap-4 bg-muted/50 p-4">
         <Button
           variant="ghost"
-          className="flex flex-col h-auto p-2"
+          className="flex-1"
           aria-label="Mute"
         >
-          <MicOff className="h-6 w-6" />
-          <span className="text-xs mt-1">Mute</span>
-        </Button>
-        <Button
-          variant="ghost"
-          className="flex flex-col h-auto p-2"
-          aria-label="Keypad"
-        >
-          <Grid3x3 className="h-6 w-6" />
-          <span className="text-xs mt-1">Keypad</span>
-        </Button>
-        <Button
-          variant="ghost"
-          className="flex flex-col h-auto p-2"
-          aria-label="Speaker"
-        >
-          <Volume2 className="h-6 w-6" />
-          <span className="text-xs mt-1">Speaker</span>
+          <MicOff className="h-5 w-5 mr-2" />
+          Mute
         </Button>
         <Button
           variant="destructive"
-          className="flex flex-col h-auto p-2 bg-red-600 hover:bg-red-700"
+          className="flex-1 bg-destructive hover:bg-destructive/90 text-destructive-foreground font-bold"
           aria-label="End call"
         >
-          <PhoneOff className="h-6 w-6" />
-          <span className="text-xs mt-1">End</span>
+          <AlertTriangle className="h-5 w-5 mr-2" />
+          DESCONEXIÓN
         </Button>
       </CardFooter>
     </Card>

@@ -17,12 +17,10 @@ export default function Home() {
             strokeLinejoin="round"
             className="text-primary h-7 w-7"
           >
-            <rect width="18" height="18" x="3" y="3" rx="2" />
-            <path d="M7 8v2a5 5 0 0 0 5 5v0a5 5 0 0 0 5-5V8" />
-            <path d="M12 18v-3" />
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
           </svg>
           <h1 className="text-xl md:text-2xl font-bold text-primary font-headline tracking-tight">
-            Secure Call
+            SecureCall
           </h1>
         </div>
       </header>
@@ -31,8 +29,8 @@ export default function Home() {
       </main>
       <footer className="text-center p-4 text-xs text-muted-foreground">
         <p>
-          &copy; {new Date().getFullYear()} Secure Call. Protect your voice,
-          protect your privacy.
+          &copy; {new Date().getFullYear()} SecureCall. Tu voz real, solo para
+          quienes tú quieras.
         </p>
       </footer>
     </div>

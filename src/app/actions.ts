@@ -7,12 +7,12 @@ import {
 import { z } from 'zod';
 
 const VoiceSchema = z.object({
-  text: z.string(),
-  gender: z.enum(['male', 'female', 'custom']),
+  text: z.string(), // This is now a data URI
+  gender: z.enum(['hero', 'incognito', 'robot']),
 });
 
 export async function getAlteredVoiceAction(
-  input: GenerateVoiceProfileInput
+  input: GenerateVoiceProfileInput & { text: string }
 ): Promise<{ audioDataUri?: string; error?: string }> {
   const validatedFields = VoiceSchema.safeParse(input);
 

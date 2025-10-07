@@ -15,9 +15,8 @@ import wav from 'wav';
 
 const GenerateVoiceProfileInputSchema = z.object({
   gender: z
-    .enum(['male', 'female', 'custom'])
+    .enum(['hero', 'incognito', 'robot'])
     .describe('The desired gender for the voice profile.'),
-  voiceName: z.string().optional().describe('The specific voice name to use (optional).'),
   text: z.string().describe('The audio to be transformed, as a data URI.'),
 });
 
@@ -69,25 +68,30 @@ const generateVoiceProfileFlow = ai.defineFlow(
     outputSchema: GenerateVoiceProfileOutputSchema,
   },
   async input => {
-    const {
-      gender,
-      text: audioDataUri, // This is an audio data URI
-    } = input;
+    let genderPrompt;
+    switch (input.gender) {
+      case 'hero':
+        genderPrompt = 'a deep, heroic male voice';
+        break;
+      case 'robot':
+        genderPrompt = 'a robotic voice';
+        break;
+      case 'incognito':
+      default:
+        genderPrompt = 'a neutral, anonymous-sounding voice';
+        break;
+    }
 
     const {media} = await ai.generate({
-      model: googleAI.model('gemini-2.5-flash-preview-tts'),
-      prompt: `Transform this voice to a ${gender} voice`,
+      model: googleAI.model('gemini-2.5-flash'),
+      prompt: [
+        {
+          text: `Transform this voice into ${genderPrompt}. The output should only be the transformed audio.`,
+        },
+        {media: {url: input.text}},
+      ],
       config: {
         responseModalities: ['AUDIO'],
-        speechConfig: {
-          voiceConversionConfig: {
-            sourceVoice: {
-              audio: {
-                uri: audioDataUri,
-              },
-            },
-          },
-        },
         safetySettings: [
           {
             category: 'HARM_CATEGORY_DANGEROUS_CONTENT',
