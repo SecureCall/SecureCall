@@ -1,4 +1,3 @@
-
 'use server';
 
 import {
@@ -8,7 +7,7 @@ import {
 import { z } from 'zod';
 
 const VoiceSchema = z.object({
-  text: z.string().min(1, 'Please enter some text to generate audio.'),
+  text: z.string().min(1, 'Please provide audio input.'),
   gender: z.enum(['male', 'female', 'custom']),
 });
 

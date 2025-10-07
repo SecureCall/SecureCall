@@ -17,7 +17,7 @@ const GenerateVoiceProfileInputSchema = z.object({
     .enum(['male', 'female', 'custom'])
     .describe('The desired gender for the voice profile.'),
   voiceName: z.string().optional().describe('The specific voice name to use (optional).'),
-  text: z.string().describe('The text to be spoken in the generated voice.'),
+  text: z.string().describe('The audio to be transformed, as a data URI.'),
 });
 
 export type GenerateVoiceProfileInput = z.infer<typeof GenerateVoiceProfileInputSchema>;
@@ -71,13 +71,31 @@ const generateVoiceProfileFlow = ai.defineFlow(
     const {
       gender,
       voiceName,
-      text,
+      text, // This is now a data URI
     } = input;
+
+    // For this example, we'll use a simple prompt instructing the model to "speak" the audio.
+    // In a real scenario, you might have a more complex voice-to-voice model or flow.
+    // Since we are still using a TTS model, we'll convert the intent of the audio to text and then generate speech.
+    
+    const whatIsSaid = await ai.generate({
+      prompt: [
+        {text: 'Listen to the following audio and transcribe what is being said. Output only the transcribed text.'},
+        {media: {url: text}}
+      ]
+    });
 
     const voiceConfig: any = {};
 
     if (voiceName) {
       voiceConfig.prebuiltVoiceConfig = {voiceName};
+    } else {
+       // Simple logic to pick a voice based on gender
+       if (gender === 'male') {
+        voiceConfig.prebuiltVoiceConfig = { voiceName: 'en-US-Standard-D' };
+      } else if (gender === 'female') {
+        voiceConfig.prebuiltVoiceConfig = { voiceName: 'en-US-Standard-W' };
+      }
     }
 
     const {media} = await ai.generate({
@@ -88,7 +106,7 @@ const generateVoiceProfileFlow = ai.defineFlow(
           voiceConfig,
         },
       },
-      prompt: text,
+      prompt: whatIsSaid.text,
     });
 
     if (!media) {

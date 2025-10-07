@@ -1,16 +1,15 @@
-
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import {
   Grid3x3,
   Loader2,
+  Mic,
   MicOff,
   PhoneOff,
-  Play,
+  Square,
   Volume2,
 } from 'lucide-react';
-import Image from 'next/image';
 import { useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
@@ -37,23 +36,28 @@ import {
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Switch } from '@/components/ui/switch';
-import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
 
 const formSchema = z.object({
-  text: z.string().min(1, 'Please enter some text.'),
   gender: z.enum(['male', 'female', 'custom'], {
     required_error: 'You need to select a voice type.',
   }),
+  text: z.string(),
 });
+
+type RecordingState = 'idle' | 'recording' | 'playing' | 'loading';
 
 export default function CallScreen() {
   const [isEffectOn, setIsEffectOn] = useState(true);
-  const [isLoading, setIsLoading] = useState(false);
+  const [recordingState, setRecordingState] = useState<RecordingState>('idle');
   const [audioSrc, setAudioSrc] = useState<string | null>(null);
   const [callTime, setCallTime] = useState(0);
+
   const audioRef = useRef<HTMLAudioElement>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+
   const { toast } = useToast();
 
   const avatar = PlaceHolderImages.find((img) => img.id === 'avatar-1');
@@ -77,38 +81,90 @@ export default function CallScreen() {
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      text: "Hello, this is a test of the Secure Call voice alteration system. I can now say anything I want, and my voice will be protected.",
       gender: 'male',
+      text: 'This is a recording that will be transformed.', // Default text for the model
     },
   });
 
-  async function onSubmit(values: z.infer<typeof formSchema>) {
-    setIsLoading(true);
-    setAudioSrc(null);
-    const result = await getAlteredVoiceAction(values);
-    setIsLoading(false);
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaRecorderRef.current = new MediaRecorder(stream);
+      audioChunksRef.current = [];
 
-    if (result.error) {
+      mediaRecorderRef.current.ondataavailable = (event) => {
+        audioChunksRef.current.push(event.data);
+      };
+
+      mediaRecorderRef.current.onstop = async () => {
+        setRecordingState('loading');
+        const audioBlob = new Blob(audioChunksRef.current, {
+          type: 'audio/wav',
+        });
+        const reader = new FileReader();
+        reader.readAsDataURL(audioBlob);
+        reader.onloadend = async () => {
+          const base64Audio = reader.result as string;
+          const values = form.getValues();
+          const result = await getAlteredVoiceAction({
+            ...values,
+            text: base64Audio, // Send audio data instead of text
+          });
+
+          if (result.error) {
+            toast({
+              variant: 'destructive',
+              title: 'Error',
+              description: result.error,
+            });
+            setRecordingState('idle');
+          } else if (result.audioDataUri) {
+            setAudioSrc(result.audioDataUri);
+            toast({
+              title: 'Success!',
+              description: 'Your altered voice has been generated.',
+            });
+            setRecordingState('playing');
+          }
+        };
+      };
+
+      mediaRecorderRef.current.start();
+      setRecordingState('recording');
+    } catch (error) {
+      console.error('Error accessing microphone:', error);
       toast({
         variant: 'destructive',
-        title: 'Error',
-        description: result.error,
-      });
-    } else if (result.audioDataUri) {
-      setAudioSrc(result.audioDataUri);
-      toast({
-        title: 'Success!',
-        description: 'Your altered voice has been generated.',
+        title: 'Microphone Error',
+        description: 'Could not access the microphone. Please check permissions.',
       });
     }
-  }
+  };
+
+  const stopRecording = () => {
+    if (
+      mediaRecorderRef.current &&
+      mediaRecorderRef.current.state === 'recording'
+    ) {
+      mediaRecorderRef.current.stop();
+    }
+  };
 
   useEffect(() => {
-    if (audioSrc && audioRef.current) {
+    if (recordingState === 'playing' && audioSrc && audioRef.current) {
       audioRef.current.load();
       audioRef.current.play().catch((e) => console.error('Audio play failed', e));
+      audioRef.current.onended = () => setRecordingState('idle');
     }
-  }, [audioSrc]);
+  }, [recordingState, audioSrc]);
+  
+  const handleMicButtonClick = () => {
+    if (recordingState === 'idle') {
+      startRecording();
+    } else if (recordingState === 'recording') {
+      stopRecording();
+    }
+  }
 
   return (
     <Card className="w-full max-w-md mx-auto rounded-3xl shadow-2xl overflow-hidden border-4 border-card">
@@ -142,25 +198,11 @@ export default function CallScreen() {
         </div>
 
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-            <fieldset disabled={!isEffectOn || isLoading}>
-              <FormField
-                control={form.control}
-                name="text"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Text to Speak</FormLabel>
-                    <FormControl>
-                      <Textarea
-                        placeholder="Enter the text you want to say..."
-                        className="resize-none min-h-[100px]"
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+          <form
+            onSubmit={(e) => e.preventDefault()}
+            className="space-y-6"
+          >
+            <fieldset disabled={!isEffectOn || recordingState !== 'idle'}>
               <FormField
                 control={form.control}
                 name="gender"
@@ -193,46 +235,61 @@ export default function CallScreen() {
               />
             </fieldset>
 
-            <div className="pt-2">
+            <div className="pt-2 flex flex-col items-center">
               <Button
-                type="submit"
-                className="w-full bg-accent hover:bg-accent/90 text-accent-foreground font-bold text-lg py-6 rounded-xl"
-                disabled={!isEffectOn || isLoading}
-                size="lg"
+                type="button"
+                onClick={handleMicButtonClick}
+                className="w-20 h-20 rounded-full bg-accent hover:bg-accent/90 text-accent-foreground font-bold text-lg"
+                disabled={!isEffectOn || recordingState === 'playing' || recordingState === 'loading'}
+                size="icon"
               >
-                {isLoading ? (
-                  <>
-                    <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                    Generating...
-                  </>
+                {recordingState === 'loading' ? (
+                   <Loader2 className="h-8 w-8 animate-spin" />
+                ) : recordingState === 'recording' ? (
+                  <Square className="h-8 w-8" />
                 ) : (
-                  <>
-                    <Play className="mr-2 h-5 w-5" />
-                    Generate & Play
-                  </>
+                  <Mic className="h-8 w-8" />
                 )}
               </Button>
+               <p className="text-sm text-muted-foreground mt-2">
+                 {recordingState === 'recording' && 'Recording... Press to stop.'}
+                 {recordingState === 'idle' && 'Press to record.'}
+                 {recordingState === 'loading' && 'Processing...'}
+                 {recordingState === 'playing' && 'Playing back altered voice.'}
+               </p>
             </div>
           </form>
         </Form>
         {audioSrc && (
           <div className="mt-6">
-             <audio ref={audioRef} controls className="w-full" src={audioSrc}>
+            <audio ref={audioRef} controls className="w-full hidden" src={audioSrc}>
               Your browser does not support the audio element.
             </audio>
           </div>
         )}
       </CardContent>
       <CardFooter className="grid grid-cols-4 gap-2 bg-muted/50 p-4">
-        <Button variant="ghost" className="flex flex-col h-auto p-2" aria-label="Mute">
+        <Button
+          variant="ghost"
+          className="flex flex-col h-auto p-2"
+          aria-label="Mute"
+        >
           <MicOff className="h-6 w-6" />
           <span className="text-xs mt-1">Mute</span>
         </Button>
-        <Button variant="ghost" className="flex flex-col h-auto p-2" aria-label="Keypad">
+        <Button
+          variant="ghost"
+          className="flex flex-col h-auto p-2"
+          aria-label="Keypad"
+        >
           <Grid3x3 className="h-6 w-6" />
           <span className="text-xs mt-1">Keypad</span>
         </Button>
-        <Button variant="ghost" className="flex flex-col h-auto p-2" aria-label="Speaker">
+        <Button
+          variant="ghost"
+          className="flex flex-col h-auto p-2"
+          aria-label="Speaker"
+        >
           <Volume2 className="h-6 w-6" />
           <span className="text-xs mt-1">Speaker</span>
         </Button>
