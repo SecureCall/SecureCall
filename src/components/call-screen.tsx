@@ -54,13 +54,14 @@ const formSchema = z.object({
 });
 
 type RecordingState = 'idle' | 'recording' | 'playing' | 'loading' | 'saved';
+type PermissionState = 'prompt' | 'granted' | 'denied' | 'not_found';
 
 export default function CallScreen() {
   const [isEffectOn, setIsEffectOn] = useState(true);
   const [recordingState, setRecordingState] = useState<RecordingState>('idle');
   const [audioSrc, setAudioSrc] = useState<string | null>(null);
   const [callTime, setCallTime] = useState(0);
-  const [hasMicPermission, setHasMicPermission] = useState<boolean | null>(null);
+  const [permissionState, setPermissionState] = useState<PermissionState>('prompt');
 
   const audioRef = useRef<HTMLAudioElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -74,46 +75,31 @@ export default function CallScreen() {
   const requestMicrophonePermission = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      stream.getTracks().forEach((track) => track.stop()); // We only need to request permission
-      setHasMicPermission(true);
-    } catch (error) {
-      console.error('Microphone access was denied.', error);
-      setHasMicPermission(false);
-      toast({
-        variant: 'destructive',
-        title: 'Microphone Access Denied',
-        description: 'Please enable microphone access in your browser settings to use this feature.',
-      });
+      stream.getTracks().forEach((track) => track.stop());
+      setPermissionState('granted');
+    } catch (error: any) {
+      console.error('Microphone access error:', error);
+      if (error.name === 'NotFoundError') {
+        setPermissionState('not_found');
+      } else {
+        setPermissionState('denied');
+      }
     }
   };
   
   useEffect(() => {
-    // On initial load, check for permission status silently if possible
-    navigator.permissions?.query({ name: 'microphone' }).then(permissionStatus => {
-      if (permissionStatus.state === 'granted') {
-        setHasMicPermission(true);
-      } else if (permissionStatus.state === 'denied') {
-        setHasMicPermission(false);
-      } else {
-        setHasMicPermission(null); // Prompt needed
-      }
-      permissionStatus.onchange = () => {
-        setHasMicPermission(permissionStatus.state === 'granted');
-      };
-    }).catch(() => {
-      // Fallback for browsers that don't support Permissions API
-      setHasMicPermission(null);
-    });
+    // On initial load, try to get permission to set the initial state
+    requestMicrophonePermission();
   }, []);
   
   useEffect(() => {
-    if (hasMicPermission) {
+    if (permissionState === 'granted') {
       const timer = setInterval(() => {
         setCallTime((prevTime) => prevTime + 1);
       }, 1000);
       return () => clearInterval(timer);
     }
-  }, [hasMicPermission]);
+  }, [permissionState]);
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60)
@@ -173,7 +159,7 @@ export default function CallScreen() {
   };
   
   const startRecording = () => {
-    if (!hasMicPermission) {
+    if (permissionState !== 'granted') {
       toast({
         variant: 'destructive',
         title: 'Error de Micrófono',
@@ -288,7 +274,7 @@ export default function CallScreen() {
     }
   };
 
-  if (hasMicPermission === null || hasMicPermission === false) {
+  if (permissionState !== 'granted') {
     return (
       <Card className="w-full max-w-md mx-auto rounded-3xl shadow-2xl overflow-hidden border-4 border-card text-center">
         <CardHeader>
@@ -301,17 +287,16 @@ export default function CallScreen() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="bg-muted p-4 rounded-lg text-left space-y-4">
-              <div className="flex items-start">
-                  <div className="flex-shrink-0 w-6 h-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center mr-3">1</div>
-                  <p className="text-sm">Haz clic en "Permitir Micrófono" para activar la protección.</p>
-              </div>
-              <div className="flex items-start">
-                  <div className="flex-shrink-0 w-6 h-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center mr-3">2</div>
-                  <p className="text-sm">Selecciona "Permitir" en la ventana que aparecerá en tu navegador.</p>
-              </div>
-          </div>
-           {hasMicPermission === false && (
+           {permissionState === 'not_found' && (
+             <Alert variant="destructive" className="mt-4">
+               <AlertCircle className="h-4 w-4" />
+                <AlertTitle>No se encontró ningún micrófono</AlertTitle>
+                <AlertDescription>
+                  Asegúrate de que tu micrófono esté conectado y habilitado en la configuración de tu sistema.
+                </AlertDescription>
+            </Alert>
+           )}
+           {permissionState === 'denied' && (
              <Alert variant="destructive" className="mt-4">
                <AlertCircle className="h-4 w-4" />
                 <AlertTitle>Acceso Denegado</AlertTitle>
@@ -320,9 +305,21 @@ export default function CallScreen() {
                 </AlertDescription>
             </Alert>
            )}
+           {permissionState === 'prompt' && (
+            <div className="bg-muted p-4 rounded-lg text-left space-y-4">
+                <div className="flex items-start">
+                    <div className="flex-shrink-0 w-6 h-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center mr-3">1</div>
+                    <p className="text-sm">Haz clic en "Permitir Micrófono" para activar la protección.</p>
+                </div>
+                <div className="flex items-start">
+                    <div className="flex-shrink-0 w-6 h-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center mr-3">2</div>
+                    <p className="text-sm">Selecciona "Permitir" en la ventana que aparecerá en tu navegador.</p>
+                </div>
+            </div>
+           )}
         </CardContent>
         <CardFooter className="flex-col gap-4">
-          <Button onClick={requestMicrophonePermission} className="w-full" size="lg">
+          <Button onClick={requestMicrophonePermission} className="w-full" size="lg" disabled={permissionState === 'not_found'}>
             <Mic className="mr-2 h-5 w-5" />
             Permitir Micrófono
           </Button>
