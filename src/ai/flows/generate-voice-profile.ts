@@ -71,33 +71,19 @@ const generateVoiceProfileFlow = ai.defineFlow(
   async input => {
     const {
       gender,
-      voiceName,
-      text, // This is an audio data URI
+      text: audioDataUri, // This is an audio data URI
     } = input;
-
-    let targetVoice = 'en-US-Standard-D'; // Default male voice
-    if (gender === 'female') {
-      targetVoice = 'en-US-Standard-W'; // Default female voice
-    }
-    if (voiceName) {
-      targetVoice = voiceName;
-    }
 
     const {media} = await ai.generate({
       model: googleAI.model('gemini-2.5-flash-preview-tts'),
+      prompt: `Transform this voice to a ${gender} voice`,
       config: {
         responseModalities: ['AUDIO'],
         speechConfig: {
           voiceConversionConfig: {
             sourceVoice: {
-              // The model will analyze the voice from the input audio
               audio: {
-                uri: text,
-              },
-            },
-            targetVoice: {
-              prebuiltVoiceConfig: {
-                voiceName: targetVoice,
+                uri: audioDataUri,
               },
             },
           },
@@ -109,9 +95,6 @@ const generateVoiceProfileFlow = ai.defineFlow(
           },
         ],
       },
-      // The prompt is required but will be ignored when voiceConversionConfig is used.
-      // We provide a simple placeholder.
-      prompt: 'Transform the voice.',
     });
 
     if (!media) {
