@@ -112,64 +112,23 @@
     ]
   },
   "firestore": {
-    "structure": [
-      {
-        "path": "/users/{userId}/user_settings/{userSettingsId}",
-        "definition": {
-          "entityName": "UserSettings",
-          "schema": {
-            "$ref": "#/backend/entities/UserSettings"
-          },
-          "description": "Stores user-specific settings and security preferences. Uses path-based ownership: only the user with the matching userId can read or write. This enables secure `list` operations.",
-          "params": [
-            {
-              "name": "userId",
-              "description": "The ID of the user."
-            },
-            {
-              "name": "userSettingsId",
-              "description": "The ID of the user settings document."
-            }
-          ]
-        }
+    "/users/{userId}/user_settings/{userSettingsId}": {
+      "schema": {
+        "$ref": "#/entities/UserSettings"
       },
-      {
-        "path": "/users/{userId}/voice_profiles/{voiceProfileId}",
-        "definition": {
-          "entityName": "VoiceProfile",
-          "schema": {
-            "$ref": "#/backend/entities/VoiceProfile"
-          },
-          "description": "Stores voice profiles associated with a user. Uses path-based ownership: only the user with the matching userId can read or write. This enables secure `list` operations.",
-          "params": [
-            {
-              "name": "userId",
-              "description": "The ID of the user."
-            },
-            {
-              "name": "voiceProfileId",
-              "description": "The ID of the voice profile."
-            }
-          ]
-        }
+      "description": "Stores user-specific settings and security preferences. Uses path-based ownership: only the user with the matching userId can read or write. This enables secure `list` operations."
+    },
+    "/users/{userId}/voice_profiles/{voiceProfileId}": {
+      "schema": {
+        "$ref": "#/entities/VoiceProfile"
       },
-      {
-        "path": "/voice_parameters/{voiceParameterId}",
-        "definition": {
-          "entityName": "VoiceParameters",
-          "schema": {
-            "$ref": "#/backend/entities/VoiceParameters"
-          },
-          "description": "Stores global voice parameters and presets. Read access is allowed for all authenticated users, but write access is restricted.",
-          "params": [
-            {
-              "name": "voiceParameterId",
-              "description": "The ID of the voice parameter document."
-            }
-          ]
-        }
-      }
-    ],
-    "reasoning": "The Firestore structure is designed to prioritize authorization independence, clarity, and security, aligning with the specified principles. It leverages path-based ownership for user-specific data and avoids `get()` calls in security rules by denormalizing authorization context where needed. Specifically, all voice profiles are stored under the respective user's ID to ensure that only the authenticated user has access. This achieves authorization independence. The design also segregates data based on access requirements (e.g., user settings vs. voice profiles) to maintain a homogeneous security posture.\n\nThe structure supports the required QAPs (Rules are not Filters) by using path-based ownership for user data, making `list` operations secure as the rules can simply check if `request.auth.uid == userId` without needing to filter based on document content. The use of dedicated subcollections for default and custom voices allows for different rules if necessary but maintains clear ownership by the user."
+      "description": "Stores voice profiles associated with a user. Uses path-based ownership: only the user with the matching userId can read or write. This enables secure `list` operations."
+    },
+    "/voice_parameters/{voiceParameterId}": {
+      "schema": {
+        "$ref": "#/entities/VoiceProfile"
+      },
+      "description": "Stores global voice parameters and presets. Read access is allowed for all authenticated users, but write access is restricted."
+    }
   }
 }

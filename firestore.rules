@@ -1,91 +1,99 @@
 /**
- * @file Firestore Security Rules for SecureCall
- * @description This ruleset enforces a strict user-ownership model for user-specific data, while allowing public read access to shared voice parameters.
- * @dataStructure
- * - `/users/{userId}/user_settings/{userSettingsId}`: Stores user settings, accessible only by the user.
- * - `/users/{userId}/voice_profiles/{voiceProfileId}`: Stores voice profiles, accessible only by the user.
- * - `/voice_parameters/{voiceParameterId}`: Stores global voice parameters, publicly readable but not writable.
- * @keySecurityDecisions
- * - User data is strictly segregated under `/users/{userId}` to enforce ownership.
- * - Listing user-scoped data is allowed only for the owner, leveraging path-based authorization.
- * - Global voice parameters are publicly readable, but writes are disallowed to prevent unauthorized modifications.
+ * @fileoverview Firestore Security Rules for the Secure Call application.
+ *
+ * Core Philosophy:
+ * This ruleset enforces a strict user-ownership model for user-specific data
+ * (UserSettings and VoiceProfiles). Global voice parameters are publicly readable
+ * but not writable.
+ *
+ * Data Structure:
+ * - /users/{userId}/user_settings/{userSettingsId}: User-specific settings.
+ * - /users/{userId}/voice_profiles/{voiceProfileId}: User-specific voice profiles.
+ * - /voice_parameters/{voiceParameterId}: Global, read-only voice parameters.
+ *
+ * Key Security Decisions:
+ * - User listing is disallowed.
+ * - Data types and optional/required fields are not validated during this phase.
+ * - The rules prioritize security and authorization over schema validation to
+ *   enable rapid iteration.
+ *
+ * Denormalization for Authorization:
+ * - UserSettings and VoiceProfiles are stored under the /users/{userId} path.
+ *   This denormalization allows for simple, path-based authorization using the
+ *   `isOwner(userId)` helper function, avoiding costly `get()` calls.
+ *
+ * Structural Segregation:
+ * - User-specific data (UserSettings, VoiceProfiles) is stored under a user's
+ *   document.
  */
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
     /**
-     * @description Manages user-specific settings. Only the user can read and write their own settings.
-     * @path /users/{userId}/user_settings/{userSettingsId}
-     * @allow (read, write) if the user is authenticated and the userId matches the authenticated user's ID.
-     * @deny (read, write) if the user is not authenticated or the userId does not match the authenticated user's ID.
-     * @principle Enforces document ownership for writes and restricts access to a user's own data tree.
-     */
-    match /users/{userId}/user_settings/{userSettingsId} {
-      allow get: if isSignedIn() && isOwner(userId);
-      allow list: if isSignedIn() && isOwner(userId);
-      allow create: if isSignedIn() && isOwner(userId) && request.resource.data.userId == userId;
-      allow update: if isSignedIn() && isExistingOwner(userId) && resource.data.userId == userId;
-      allow delete: if isSignedIn() && isExistingOwner(userId);
-    }
-
-    /**
-     * @description Manages voice profiles for a user. Only the user can read and write their own voice profiles.
-     * @path /users/{userId}/voice_profiles/{voiceProfileId}
-     * @allow (read, write) if the user is authenticated and the userId matches the authenticated user's ID.
-     * @deny (read, write) if the user is not authenticated or the userId does not match the authenticated user's ID.
-     * @principle Enforces document ownership for writes and restricts access to a user's own data tree.
-     */
-    match /users/{userId}/voice_profiles/{voiceProfileId} {
-      allow get: if isSignedIn() && isOwner(userId);
-      allow list: if isSignedIn() && isOwner(userId);
-      allow create: if isSignedIn() && isOwner(userId) && request.resource.data.userId == userId;
-      allow update: if isSignedIn() && isExistingOwner(userId) && resource.data.userId == userId;
-      allow delete: if isSignedIn() && isExistingOwner(userId);
-    }
-
-    /**
-     * @description Manages global voice parameters. All authenticated users can read, but writes are disallowed.
-     * @path /voice_parameters/{voiceParameterId}
-     * @allow (read) if the user is authenticated.
-     * @deny (write) Always deny write access.
-     * @principle Restricts write access to global parameters to prevent unauthorized modifications.
-     */
-    match /voice_parameters/{voiceParameterId} {
-      allow get: if isSignedIn();
-      allow list: if isSignedIn();
-      allow create: if false;
-      allow update: if false;
-      allow delete: if false;
-    }
-
-    //------------------- Helper Functions -------------------
-
-    /**
-     * @description Checks if the user is signed in.
-     * @return True if the user is authenticated, false otherwise.
+     * @description Checks if the request is authenticated.
      */
     function isSignedIn() {
       return request.auth != null;
     }
 
     /**
-     * @description Checks if the user is the owner of the resource based on the userId.
-     * @param {string} userId - The user ID to compare against the authenticated user's ID.
-     * @return True if the user is the owner, false otherwise.
+     * @description Checks if the request is made by the owner of the resource.
      */
     function isOwner(userId) {
       return request.auth.uid == userId;
     }
 
     /**
-     * @description Checks if the user is the owner of the resource and the resource exists.
-     *              This function is used for update and delete operations to prevent acting on non-existent documents.
-     * @param {string} userId - The user ID to compare against the authenticated user's ID.
-     * @return True if the user is the owner and the resource exists, false otherwise.
+     * @description Checks if the request is made by the owner of the resource and the resource exists.
      */
     function isExistingOwner(userId) {
-      return isOwner(userId) && resource != null;
+      return isOwner(userId) && resource.data != null;
+    }
+
+    /**
+     * @description Rules for user settings documents.
+     * @path /users/{userId}/user_settings/{userSettingsId}
+     * @allow (create) User 'user123' creates settings document with userId 'user123'.
+     * @deny (create) User 'user456' attempts to create settings document with userId 'user123'.
+     * @principle Enforces document ownership for writes and restricts access to a user's own data tree.
+     */
+    match /users/{userId}/user_settings/{userSettingsId} {
+      allow get: if isOwner(userId);
+      allow list: if false;
+      allow create: if isOwner(userId);
+      allow update: if isExistingOwner(userId);
+      allow delete: if isExistingOwner(userId);
+    }
+
+    /**
+     * @description Rules for voice profiles documents.
+     * @path /users/{userId}/voice_profiles/{voiceProfileId}
+     * @allow (create) User 'user123' creates voice profile document with userId 'user123'.
+     * @deny (create) User 'user456' attempts to create voice profile document with userId 'user123'.
+     * @principle Enforces document ownership for writes and restricts access to a user's own data tree.
+     */
+    match /users/{userId}/voice_profiles/{voiceProfileId} {
+      allow get: if isOwner(userId);
+      allow list: if false;
+      allow create: if isOwner(userId);
+      allow update: if isExistingOwner(userId);
+      allow delete: if isExistingOwner(userId);
+    }
+
+    /**
+     * @description Rules for global voice parameters documents.
+     * @path /voice_parameters/{voiceParameterId}
+     * @allow (get) Any authenticated user can read voice parameters.
+     * @deny (create) No user can create voice parameters.
+     * @principle Allows public read access but restricts writes.
+     */
+    match /voice_parameters/{voiceParameterId} {
+      allow get: if true;
+      allow list: if false;
+      allow create: if false;
+      allow update: if false;
+      allow delete: if false;
     }
   }
 }
