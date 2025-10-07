@@ -11,6 +11,7 @@ import {
   Shield,
   Square,
   Volume2,
+  AlertCircle,
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
@@ -44,6 +45,7 @@ import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
 import { useFirebase } from '@/firebase/provider';
 import { setDocumentNonBlocking } from '@/firebase/non-blocking-updates';
 import { doc } from 'firebase/firestore';
+import { Alert, AlertDescription, AlertTitle } from './ui/alert';
 
 const formSchema = z.object({
   gender: z.enum(['hero', 'incognito', 'robot'], {
@@ -58,6 +60,8 @@ export default function CallScreen() {
   const [recordingState, setRecordingState] = useState<RecordingState>('idle');
   const [audioSrc, setAudioSrc] = useState<string | null>(null);
   const [callTime, setCallTime] = useState(0);
+  const [hasMicPermission, setHasMicPermission] = useState(false);
+
 
   const audioRef = useRef<HTMLAudioElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -67,6 +71,25 @@ export default function CallScreen() {
   const { user, firestore } = useFirebase();
 
   const avatar = PlaceHolderImages.find((img) => img.id === 'avatar-1');
+
+  useEffect(() => {
+    const getMicPermission = async () => {
+      try {
+        await navigator.mediaDevices.getUserMedia({ audio: true });
+        setHasMicPermission(true);
+      } catch (error) {
+        console.error("Microphone access denied:", error);
+        setHasMicPermission(false);
+        toast({
+          variant: 'destructive',
+          title: 'Error de Micrófono',
+          description: 'El acceso al micrófono es necesario. Por favor, habilítalo en la configuración de tu navegador.',
+        });
+      }
+    };
+    getMicPermission();
+  }, [toast]);
+
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -134,6 +157,14 @@ export default function CallScreen() {
   };
 
   const startRecording = () => {
+    if (!hasMicPermission) {
+       toast({
+          variant: 'destructive',
+          title: 'Error de Micrófono',
+          description: 'No se puede grabar sin acceso al micrófono. Por favor, comprueba los permisos.',
+        });
+      return;
+    }
     navigator.mediaDevices
       .getUserMedia({ audio: true })
       .then((stream) => {
@@ -258,6 +289,15 @@ export default function CallScreen() {
         </CardDescription>
       </CardHeader>
       <CardContent className="p-6">
+        {!hasMicPermission && (
+          <Alert variant="destructive" className="mb-4">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>Acceso al Micrófono Requerido</AlertTitle>
+            <AlertDescription>
+              Para grabar tu voz, debes permitir el acceso al micrófono en la configuración de tu navegador.
+            </AlertDescription>
+          </Alert>
+        )}
         <div className="flex items-center justify-center space-x-3 mb-6 p-3 rounded-lg bg-muted/50">
           <Shield className="text-accent h-5 w-5" />
           <Label htmlFor="effect-switch" className="font-medium">
@@ -273,7 +313,7 @@ export default function CallScreen() {
 
         <Form {...form}>
           <form onSubmit={(e) => e.preventDefault()} className="space-y-6">
-            <fieldset disabled={!isEffectOn || (recordingState !== 'idle' && recordingState !== 'saved') }>
+            <fieldset disabled={!isEffectOn || (recordingState !== 'idle' && recordingState !== 'saved') || !hasMicPermission }>
               <FormField
                 control={form.control}
                 name="gender"
@@ -341,7 +381,8 @@ export default function CallScreen() {
                 disabled={
                   !isEffectOn ||
                   recordingState === 'playing' ||
-                  recordingState === 'loading'
+                  recordingState === 'loading' ||
+                  !hasMicPermission
                 }
                 size="icon"
               >
@@ -349,7 +390,8 @@ export default function CallScreen() {
               </Button>
               <p className="text-sm text-muted-foreground mt-2 h-4">
                 {recordingState === 'recording' && 'Grabando... pulsa para parar.'}
-                {(recordingState === 'idle' || recordingState === 'saved') && 'Pulsa para grabar y probar un perfil.'}
+                {(recordingState === 'idle' || recordingState === 'saved') && hasMicPermission && 'Pulsa para grabar y probar un perfil.'}
+                {!hasMicPermission && 'Permiso de micrófono denegado.'}
                 {recordingState === 'loading' && 'Procesando...'}
                 {recordingState === 'playing' && 'Reproduciendo voz alterada.'}
               </p>
