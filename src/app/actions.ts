@@ -30,9 +30,13 @@ export async function getAlteredVoiceAction(
   try {
     const result = await generateVoiceProfile(validatedFields.data);
     return { audioDataUri: result.audioDataUri };
-  } catch (e) {
-    console.error('AI Error:', e);
-    return { error: 'Failed to generate voice. Please try again later.' };
+  } catch (e: any) {
+    console.error('AI Error:', e.message);
+    // Provide a more helpful error message for deployment environments
+    if (e.message?.includes('API key')) {
+        return { error: 'Error de IA: La clave de API no está configurada en el servidor. Asegúrate de añadir la variable de entorno GEMINI_API_KEY en Vercel.' };
+    }
+    return { error: 'No se pudo generar la voz. Por favor, inténtalo de nuevo más tarde.' };
   }
 }
 
@@ -73,7 +77,6 @@ export async function saveVoiceProfileAction(
             `users/${userId}/voice_profiles/${voiceProfileId}`
         );
 
-        // Using await here is fine as it's a server action
         await setDoc(voiceDocRef, newVoiceProfile, { merge: true });
 
         return { success: true, profileName };
