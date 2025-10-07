@@ -4,7 +4,7 @@ export function Logo({ size = 40, className }: { size?: number, className?: stri
   return (
     <div className={className} style={{ width: size, height: size }}>
       <Image
-        src="/logo.png"
+        src="/favicon.svg"
         alt="SecureCall Logo"
         width={size}
         height={size}
