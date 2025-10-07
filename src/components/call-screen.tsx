@@ -80,15 +80,10 @@ export default function CallScreen() {
       } catch (error) {
         console.error("Microphone access denied:", error);
         setHasMicPermission(false);
-        toast({
-          variant: 'destructive',
-          title: 'Error de Micrófono',
-          description: 'El acceso al micrófono es necesario. Por favor, habilítalo en la configuración de tu navegador.',
-        });
       }
     };
     getMicPermission();
-  }, [toast]);
+  }, []);
 
 
   useEffect(() => {
