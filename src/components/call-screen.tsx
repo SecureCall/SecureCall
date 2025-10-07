@@ -9,6 +9,7 @@ import {
   PhoneOff,
   Square,
   Volume2,
+  VolumeX,
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
@@ -240,6 +241,12 @@ export default function CallScreen() {
                             <RadioGroupItem value="female" id="female" />
                           </FormControl>
                           <Label htmlFor="female">Female</Label>
+                        </FormItem>
+                        <FormItem className="flex items-center space-x-2 space-y-0">
+                          <FormControl>
+                            <RadioGroupItem value="custom" id="custom" />
+                          </FormControl>
+                          <Label htmlFor="custom">Custom</Label>
                         </FormItem>
                       </RadioGroup>
                     </FormControl>
