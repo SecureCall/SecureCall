@@ -8,6 +8,7 @@ import {
   Mic,
   MicOff,
   PhoneOff,
+  Save,
   Shield,
   Square,
   Volume2,
@@ -15,6 +16,7 @@ import {
 import { useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
+import { v4 as uuidv4 } from 'uuid';
 
 import { getAlteredVoiceAction } from '@/app/actions';
 import { PlaceHolderImages } from '@/lib/placeholder-images';
@@ -40,6 +42,9 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
 import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
+import { useFirebase } from '@/firebase/provider';
+import { setDocumentNonBlocking } from '@/firebase/non-blocking-updates';
+import { doc } from 'firebase/firestore';
 
 const formSchema = z.object({
   gender: z.enum(['hero', 'incognito', 'robot'], {
@@ -47,7 +52,7 @@ const formSchema = z.object({
   }),
 });
 
-type RecordingState = 'idle' | 'recording' | 'playing' | 'loading';
+type RecordingState = 'idle' | 'recording' | 'playing' | 'loading' | 'saved';
 
 export default function CallScreen() {
   const [isEffectOn, setIsEffectOn] = useState(true);
@@ -60,6 +65,7 @@ export default function CallScreen() {
   const audioChunksRef = useRef<Blob[]>([]);
 
   const { toast } = useToast();
+  const { user, firestore } = useFirebase();
 
   const avatar = PlaceHolderImages.find((img) => img.id === 'avatar-1');
 
@@ -86,6 +92,48 @@ export default function CallScreen() {
     },
   });
 
+  const resetState = () => {
+    setRecordingState('idle');
+    setAudioSrc(null);
+  };
+
+  const handleSaveVoice = () => {
+    if (!user || !firestore || !audioSrc) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description:
+          'You must be logged in to save a voice profile.',
+      });
+      return;
+    }
+
+    const voiceProfileId = uuidv4();
+    const profileName = `Mi Voz ${form.getValues('gender')}`;
+    const newVoiceProfile = {
+      id: voiceProfileId,
+      userId: user.uid,
+      name: profileName,
+      isCustom: true,
+      createdBy: user.uid,
+      securityLevel: 'medium',
+      audioDataUri: audioSrc, // Saving the generated audio
+    };
+
+    const voiceDocRef = doc(
+      firestore,
+      `users/${user.uid}/voice_profiles/${voiceProfileId}`
+    );
+
+    setDocumentNonBlocking(voiceDocRef, newVoiceProfile, { merge: true });
+
+    toast({
+      title: 'Voz Guardada',
+      description: `El perfil de voz "${profileName}" ha sido guardado.`,
+    });
+    setRecordingState('saved');
+  };
+
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -108,7 +156,7 @@ export default function CallScreen() {
           const values = form.getValues();
           const result = await getAlteredVoiceAction({
             ...values,
-            text: base64Audio, // text is now audio data uri
+            text: base64Audio,
           });
 
           if (result.error) {
@@ -117,12 +165,12 @@ export default function CallScreen() {
               title: 'Error',
               description: result.error,
             });
-            setRecordingState('idle');
+            resetState();
           } else if (result.audioDataUri) {
             setAudioSrc(result.audioDataUri);
             toast({
-              title: 'Success!',
-              description: 'Your altered voice has been generated.',
+              title: '¡Éxito!',
+              description: 'Tu voz alterada ha sido generada.',
             });
             setRecordingState('playing');
           }
@@ -135,9 +183,9 @@ export default function CallScreen() {
       console.error('Error accessing microphone:', error);
       toast({
         variant: 'destructive',
-        title: 'Microphone Error',
+        title: 'Error de Micrófono',
         description:
-          'Could not access the microphone. Please check permissions.',
+          'No se pudo acceder al micrófono. Por favor, comprueba los permisos.',
       });
     }
   };
@@ -160,7 +208,7 @@ export default function CallScreen() {
   }, [recordingState, audioSrc]);
 
   const handleMicButtonClick = () => {
-    if (recordingState === 'idle') {
+    if (recordingState === 'idle' || recordingState === 'saved') {
       startRecording();
     } else if (recordingState === 'recording') {
       stopRecording();
@@ -176,6 +224,7 @@ export default function CallScreen() {
       case 'playing':
         return <Volume2 className="h-8 w-8" />;
       case 'idle':
+      case 'saved':
       default:
         return <Mic className="h-8 w-8" />;
     }
@@ -291,16 +340,15 @@ export default function CallScreen() {
               </Button>
               <p className="text-sm text-muted-foreground mt-2 h-4">
                 {recordingState === 'recording' && 'Grabando... pulsa para parar.'}
-                {recordingState === 'idle' && 'Pulsa para grabar.'}
+                {(recordingState === 'idle' || recordingState === 'saved') && 'Pulsa para grabar.'}
                 {recordingState === 'loading' && 'Procesando...'}
-                {recordingState === 'playing' &&
-                  'Reproduciendo voz alterada.'}
+                {recordingState === 'playing' && 'Reproduciendo voz alterada.'}
               </p>
             </div>
           </form>
         </Form>
         {audioSrc && (
-          <div className="mt-6">
+          <div className="mt-4 flex flex-col items-center gap-4">
             <audio
               ref={audioRef}
               controls
@@ -309,15 +357,17 @@ export default function CallScreen() {
             >
               Your browser does not support the audio element.
             </audio>
+            {recordingState !== 'recording' && recordingState !== 'loading' && (
+              <Button onClick={handleSaveVoice} disabled={!user}>
+                <Save className="mr-2 h-4 w-4" />
+                Guardar Voz
+              </Button>
+            )}
           </div>
         )}
       </CardContent>
       <CardFooter className="grid grid-cols-2 gap-4 bg-muted/50 p-4">
-        <Button
-          variant="ghost"
-          className="flex-1"
-          aria-label="Mute"
-        >
+        <Button variant="ghost" className="flex-1" aria-label="Mute">
           <MicOff className="h-5 w-5 mr-2" />
           Mute
         </Button>

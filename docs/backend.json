@@ -9,11 +9,6 @@
         "id": {
           "type": "string",
           "description": "Unique identifier for the user profile."
-        },
-        "securityPreferences": {
-          "type": "string",
-          "description": "Reference to UserSetting. (Relationship: UserProfile 1:1 UserSetting)",
-          "format": "uuid"
         }
       },
       "required": [
