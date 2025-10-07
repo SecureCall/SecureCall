@@ -7,7 +7,7 @@ import {
 import { z } from 'zod';
 
 const VoiceSchema = z.object({
-  text: z.string().min(1, 'Please provide audio input.'),
+  text: z.string(),
   gender: z.enum(['male', 'female', 'custom']),
 });
 
