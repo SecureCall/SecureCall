@@ -82,7 +82,7 @@ export default function CallScreen() {
     resolver: zodResolver(formSchema),
     defaultValues: {
       gender: 'male',
-      text: 'This is a recording that will be transformed.', // Default text for the model
+      text: '',
     },
   });
 
@@ -108,7 +108,7 @@ export default function CallScreen() {
           const values = form.getValues();
           const result = await getAlteredVoiceAction({
             ...values,
-            text: base64Audio, // Send audio data instead of text
+            text: base64Audio,
           });
 
           if (result.error) {
@@ -163,6 +163,20 @@ export default function CallScreen() {
       startRecording();
     } else if (recordingState === 'recording') {
       stopRecording();
+    }
+  }
+
+  const getRecordButtonIcon = () => {
+    switch (recordingState) {
+      case 'loading':
+        return <Loader2 className="h-8 w-8 animate-spin" />;
+      case 'recording':
+        return <Square className="h-8 w-8" />;
+      case 'playing':
+        return <Volume2 className="h-8 w-8" />;
+      case 'idle':
+      default:
+        return <Mic className="h-8 w-8" />;
     }
   }
 
@@ -243,13 +257,7 @@ export default function CallScreen() {
                 disabled={!isEffectOn || recordingState === 'playing' || recordingState === 'loading'}
                 size="icon"
               >
-                {recordingState === 'loading' ? (
-                   <Loader2 className="h-8 w-8 animate-spin" />
-                ) : recordingState === 'recording' ? (
-                  <Square className="h-8 w-8" />
-                ) : (
-                  <Mic className="h-8 w-8" />
-                )}
+                {getRecordButtonIcon()}
               </Button>
                <p className="text-sm text-muted-foreground mt-2">
                  {recordingState === 'recording' && 'Recording... Press to stop.'}
