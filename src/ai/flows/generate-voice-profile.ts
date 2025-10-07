@@ -71,31 +71,15 @@ const generateVoiceProfileFlow = ai.defineFlow(
     const {
       gender,
       voiceName,
-      text, // This is now a data URI
+      text, // This is an audio data URI
     } = input;
 
-    // For this example, we'll use a simple prompt instructing the model to "speak" the audio.
-    // In a real scenario, you might have a more complex voice-to-voice model or flow.
-    // Since we are still using a TTS model, we'll convert the intent of the audio to text and then generate speech.
-    
-    const whatIsSaid = await ai.generate({
-      prompt: [
-        {text: 'Listen to the following audio and transcribe what is being said. Output only the transcribed text.'},
-        {media: {url: text}}
-      ]
-    });
-
-    const voiceConfig: any = {};
-
+    let targetVoice = 'en-US-Standard-D'; // Default male voice
+    if (gender === 'female') {
+      targetVoice = 'en-US-Standard-W'; // Default female voice
+    }
     if (voiceName) {
-      voiceConfig.prebuiltVoiceConfig = {voiceName};
-    } else {
-       // Simple logic to pick a voice based on gender
-       if (gender === 'male') {
-        voiceConfig.prebuiltVoiceConfig = { voiceName: 'en-US-Standard-D' };
-      } else if (gender === 'female') {
-        voiceConfig.prebuiltVoiceConfig = { voiceName: 'en-US-Standard-W' };
-      }
+      targetVoice = voiceName;
     }
 
     const {media} = await ai.generate({
@@ -103,14 +87,28 @@ const generateVoiceProfileFlow = ai.defineFlow(
       config: {
         responseModalities: ['AUDIO'],
         speechConfig: {
-          voiceConfig,
+          voiceConversionConfig: {
+            sourceVoice: {
+              // The model will analyze the voice from the input audio
+              audio: {
+                uri: text,
+              },
+            },
+            targetVoice: {
+              prebuiltVoiceConfig: {
+                voiceName: targetVoice,
+              },
+            },
+          },
         },
       },
-      prompt: whatIsSaid.text,
+      // The prompt is required but will be ignored when voiceConversionConfig is used.
+      // We provide a simple placeholder.
+      prompt: 'Transform the voice.',
     });
 
     if (!media) {
-      throw new Error('No media returned');
+      throw new Error('No media returned from voice transformation');
     }
 
     const audioBuffer = Buffer.from(
