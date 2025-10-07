@@ -6,7 +6,7 @@ export default function Home() {
     <div className="flex flex-col min-h-screen bg-background font-body text-foreground">
       <header className="flex items-center justify-between p-4 border-b border-border shadow-sm">
         <div className="flex items-center gap-3">
-          <Logo />
+          <Logo size={40} />
           <h1 className="text-xl md:text-2xl font-bold text-primary font-headline tracking-tight">
             SecureCall
           </h1>
