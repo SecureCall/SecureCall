@@ -55,8 +55,8 @@ const formSchema = z.object({
 type RecordingState = 'idle' | 'recording' | 'playing' | 'loading' | 'saved';
 type PermissionState = 'prompt' | 'granted' | 'denied' | 'not_found';
 
-// Sample audio data URI (a short, silent WAV file) for testing purposes.
-const SAMPLE_AUDIO_DATA_URI = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA";
+// Sample text for the TTS model to speak.
+const SAMPLE_TEXT = "Hello, this is a test of the SecureCall voice alteration system. Your privacy is our priority.";
 
 
 export default function CallScreen() {
@@ -92,7 +92,7 @@ export default function CallScreen() {
             setPermissionState('denied');
         } else {
             console.error('Microphone access error:', error.name, error.message);
-            setPermissionState('denied');
+            setPermissionState('denied'); // Fallback to denied for other errors
         }
     }
   };
@@ -176,13 +176,13 @@ export default function CallScreen() {
     setRecordingState('loading');
     toast({
       title: 'Simulación de Grabación',
-      description: 'Usando audio de muestra para generar voz alterada...',
+      description: 'Usando texto de muestra para generar voz alterada...',
     });
 
     const values = form.getValues();
     const result = await getAlteredVoiceAction({
       ...values,
-      text: SAMPLE_AUDIO_DATA_URI, // Use sample data
+      text: SAMPLE_TEXT, // Use sample text for TTS model
     });
 
     if (result.error) {
@@ -209,8 +209,9 @@ export default function CallScreen() {
         await simulateRecordingAndAlteration();
         return;
        }
-       await requestMicrophonePermission(); // Re-request if denied or prompt
-       // If still not granted, show a toast and exit. The UI will already show the error state.
+       // If permission is 'denied' or 'prompt', show the dedicated screen.
+       // We can also re-request here, but the UI already guides the user.
+       await requestMicrophonePermission();
        if(permissionState !== 'granted' && permissionState !== 'not_found') {
          toast({
              variant: 'destructive',
@@ -233,35 +234,10 @@ export default function CallScreen() {
 
       mediaRecorderRef.current.onstop = async () => {
         setRecordingState('loading');
-        const audioBlob = new Blob(audioChunksRef.current, {
-          type: 'audio/wav',
-        });
-        const reader = new FileReader();
-        reader.readAsDataURL(audioBlob);
-        reader.onloadend = async () => {
-          const base64Audio = reader.result as string;
-          const values = form.getValues();
-          const result = await getAlteredVoiceAction({
-            ...values,
-            text: base64Audio,
-          });
-
-          if (result.error) {
-            toast({
-              variant: 'destructive',
-              title: 'Error',
-              description: result.error,
-            });
-            resetState();
-          } else if (result.audioDataUri) {
-            setAudioSrc(result.audioDataUri);
-            toast({
-              title: '¡Éxito!',
-              description: 'Tu voz alterada ha sido generada.',
-            });
-            setRecordingState('playing');
-          }
-        };
+        // Since the AI model now expects text, we can't use the recorded audio directly.
+        // We will continue to use the simulation flow for now.
+        // In a real implementation, you'd use a Speech-to-Text API here.
+        await simulateRecordingAndAlteration();
         stream.getTracks().forEach((track) => track.stop());
       };
 
@@ -269,7 +245,6 @@ export default function CallScreen() {
       setRecordingState('recording');
     } catch (error) {
       console.error('Microphone access error:', error);
-      // This catch block is for unexpected errors during start, not for permission denial handled earlier.
       toast({
         variant: 'destructive',
         title: 'Error Inesperado',
@@ -328,7 +303,7 @@ export default function CallScreen() {
   };
 
   // Dedicated permission screens
-  if (permissionState === 'denied' || (permissionState === 'prompt' && recordingState === 'idle')) {
+  if (permissionState === 'denied' || permissionState === 'prompt' || permissionState === 'not_found') {
     return (
       <Card className="w-full max-w-md mx-auto rounded-3xl shadow-2xl overflow-hidden border-4 border-card text-center">
         <CardHeader>
@@ -336,11 +311,22 @@ export default function CallScreen() {
             <MicOff size={48} className="text-destructive" />
           </div>
           <CardTitle className="text-2xl pt-4">Micrófono Requerido</CardTitle>
-          <CardDescription>
-            Para modificar tu voz, SecureCall necesita acceso al micrófono.
-          </CardDescription>
+           {permissionState !== 'not_found' && (
+            <CardDescription>
+              Para modificar tu voz, SecureCall necesita acceso al micrófono.
+            </CardDescription>
+           )}
         </CardHeader>
         <CardContent>
+          {permissionState === 'not_found' && (
+            <Alert variant="destructive">
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>Micrófono no encontrado</AlertTitle>
+              <AlertDescription>
+                No hemos podido detectar ningún micrófono. Asegúrate de que uno esté conectado y habilitado en la configuración de tu sistema.
+              </AlertDescription>
+            </Alert>
+          )}
           {permissionState === 'denied' && (
             <Alert variant="destructive" className="mt-4">
               <AlertCircle className="h-4 w-4" />

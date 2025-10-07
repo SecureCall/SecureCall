@@ -17,7 +17,7 @@ const GenerateVoiceProfileInputSchema = z.object({
   gender: z
     .enum(['hero', 'incognito', 'robot'])
     .describe('The desired gender for the voice profile.'),
-  text: z.string().describe('The audio to be transformed, as a data URI.'),
+  text: z.string().describe('The text to be spoken.'),
 });
 
 export type GenerateVoiceProfileInput = z.infer<typeof GenerateVoiceProfileInputSchema>;
@@ -68,30 +68,32 @@ const generateVoiceProfileFlow = ai.defineFlow(
     outputSchema: GenerateVoiceProfileOutputSchema,
   },
   async input => {
-    let genderPrompt;
+    let voiceName: 'Algenib' | 'Achernar' | 'Antares' = 'Algenib';
     switch (input.gender) {
       case 'hero':
-        genderPrompt = 'a deep, heroic male voice';
+        voiceName = 'Antares'; // Deep male voice
         break;
       case 'robot':
-        genderPrompt = 'a robotic voice';
+        // No direct robot voice, but we can simulate with pitch later if needed.
+        // For now, use a neutral one.
+        voiceName = 'Achernar';
         break;
       case 'incognito':
       default:
-        genderPrompt = 'a neutral, anonymous-sounding voice';
+        voiceName = 'Algenib'; // Neutral voice
         break;
     }
 
     const {media} = await ai.generate({
-      model: googleAI.model('gemini-2.5-flash'),
-      prompt: [
-        {
-          text: `Transform this voice into ${genderPrompt}. The output should only be the transformed audio.`,
-        },
-        {media: {url: input.text}},
-      ],
+      model: googleAI.model('gemini-2.5-flash-preview-tts'),
+      prompt: input.text,
       config: {
         responseModalities: ['AUDIO'],
+        speechConfig: {
+          voiceConfig: {
+            prebuiltVoiceConfig: { voiceName: voiceName },
+          },
+        },
         safetySettings: [
           {
             category: 'HARM_CATEGORY_DANGEROUS_CONTENT',
@@ -100,6 +102,7 @@ const generateVoiceProfileFlow = ai.defineFlow(
         ],
       },
     });
+    
 
     if (!media) {
       throw new Error('No media returned from voice transformation');
