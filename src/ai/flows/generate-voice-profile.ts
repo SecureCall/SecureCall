@@ -83,7 +83,7 @@ const generateVoiceProfileFlow = ai.defineFlow(
     }
 
     const {media} = await ai.generate({
-      model: 'googleai/gemini-2.5-flash-preview-tts',
+      model: ai.model, // Using the default model from genkit.ts
       config: {
         responseModalities: ['AUDIO'],
         speechConfig: {
