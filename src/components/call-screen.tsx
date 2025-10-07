@@ -74,30 +74,26 @@ export default function CallScreen() {
 
   const requestMicrophonePermission = async () => {
     try {
-      // Check for mediaDevices support
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        console.error('Browser does not support mediaDevices.getUserMedia()');
-        setPermissionState('not_found'); // Treat as not_found if API is missing
+        setPermissionState('not_found');
         return;
       }
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       stream.getTracks().forEach((track) => track.stop());
       setPermissionState('granted');
     } catch (error: any) {
-      console.error('Microphone access error:', error.name, error.message);
       if (error.name === 'NotFoundError') {
         setPermissionState('not_found');
       } else if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
         setPermissionState('denied');
       } else {
-        // For other unexpected errors, you might still want to show a generic error state
-        setPermissionState('denied');
+        console.error('Microphone access error:', error.name, error.message);
+        setPermissionState('denied'); 
       }
     }
   };
 
   useEffect(() => {
-    // On initial load, try to get permission to set the initial state
     requestMicrophonePermission();
   }, []);
 
@@ -173,11 +169,8 @@ export default function CallScreen() {
   };
 
   const startRecording = async () => {
-    // Double-check permission before starting
     if (permissionState !== 'granted') {
       await requestMicrophonePermission();
-      // If still not granted after a button click, show a toast and exit.
-      // The main component view will already be showing the permission card.
       if (permissionState !== 'granted') {
         toast({
             variant: 'destructive',
