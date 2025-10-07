@@ -102,6 +102,12 @@ const generateVoiceProfileFlow = ai.defineFlow(
             },
           },
         },
+        safetySettings: [
+          {
+            category: 'HARM_CATEGORY_DANGEROUS_CONTENT',
+            threshold: 'BLOCK_NONE',
+          },
+        ],
       },
       // The prompt is required but will be ignored when voiceConversionConfig is used.
       // We provide a simple placeholder.
