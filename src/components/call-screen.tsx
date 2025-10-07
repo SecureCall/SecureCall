@@ -179,7 +179,6 @@ export default function CallScreen() {
       mediaRecorderRef.current.start();
       setRecordingState('recording');
     } catch (error) {
-      console.error('Error accessing microphone:', error);
       toast({
         variant: 'destructive',
         title: 'Error de Micrófono',
@@ -201,10 +200,17 @@ export default function CallScreen() {
   useEffect(() => {
     if (recordingState === 'playing' && audioSrc && audioRef.current) {
       audioRef.current.load();
-      audioRef.current.play().catch((e) => console.error('Audio play failed', e));
+      audioRef.current.play().catch((e) => {
+        toast({
+          variant: 'destructive',
+          title: 'Error de Reproducción',
+          description: 'No se pudo reproducir el audio.',
+        });
+        console.error('Audio play failed', e);
+      });
       audioRef.current.onended = () => setRecordingState('idle');
     }
-  }, [recordingState, audioSrc]);
+  }, [recordingState, audioSrc, toast]);
 
   const handleMicButtonClick = () => {
     if (recordingState === 'idle' || recordingState === 'saved') {
