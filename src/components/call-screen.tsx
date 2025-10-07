@@ -15,9 +15,8 @@ import {
 import { useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
-import { v4 as uuidv4 } from 'uuid';
 
-import { getAlteredVoiceAction } from '@/app/actions';
+import { getAlteredVoiceAction, saveVoiceProfileAction } from '@/app/actions';
 import { PlaceHolderImages } from '@/lib/placeholder-images';
 import { Button } from '@/components/ui/button';
 import {
@@ -42,8 +41,6 @@ import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
 import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
 import { useFirebase } from '@/firebase/provider';
-import { setDocumentNonBlocking } from '@/firebase/non-blocking-updates';
-import { doc } from 'firebase/firestore';
 import { Alert, AlertDescription, AlertTitle } from './ui/alert';
 
 const formSchema = z.object({
@@ -55,7 +52,6 @@ const formSchema = z.object({
 type RecordingState = 'idle' | 'recording' | 'playing' | 'loading' | 'saved';
 type PermissionState = 'prompt' | 'granted' | 'denied' | 'not_found';
 
-// Sample text for the TTS model to speak.
 const SAMPLE_TEXT = "Hello, this is a test of the SecureCall voice alteration system. Your privacy is our priority.";
 
 
@@ -66,17 +62,24 @@ export default function CallScreen() {
   const [callTime, setCallTime] = useState(0);
   const [permissionState, setPermissionState] =
     useState<PermissionState>('prompt');
+  
+  const [isSaving, setIsSaving] = useState(false);
 
   const audioRef = useRef<HTMLAudioElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
 
   const { toast } = useToast();
-  const { user, firestore } = useFirebase();
+  const { user } = useFirebase();
 
   const avatar = PlaceHolderImages.find((img) => img.id === 'avatar-1');
 
   const requestMicrophonePermission = async () => {
+    // On server, navigator is not available.
+    if (typeof navigator === 'undefined') {
+      setPermissionState('not_found');
+      return;
+    }
     try {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         setPermissionState('not_found');
@@ -92,7 +95,7 @@ export default function CallScreen() {
             setPermissionState('denied');
         } else {
             console.error('Microphone access error:', error.name, error.message);
-            setPermissionState('denied'); // Fallback to denied for other errors
+            setPermissionState('denied'); 
         }
     }
   };
@@ -103,7 +106,6 @@ export default function CallScreen() {
 
   useEffect(() => {
     let timer: NodeJS.Timeout;
-    // Start timer regardless of mic permission for simulation purposes
     timer = setInterval(() => {
         setCallTime((prevTime) => prevTime + 1);
     }, 1000);
@@ -135,54 +137,63 @@ export default function CallScreen() {
     setAudioSrc(null);
   };
 
-  const handleSaveVoice = () => {
-    if (!user || !firestore || !audioSrc) {
+  const handleSaveVoice = async () => {
+    if (!user || !audioSrc) {
       toast({
         variant: 'destructive',
         title: 'Error',
-        description:
-          'No se pudo guardar el perfil de voz. Inténtalo de nuevo.',
+        description: 'No se pudo guardar el perfil de voz. Inténtalo de nuevo.',
       });
       return;
     }
-
-    const voiceProfileId = uuidv4();
-    const profileName = `Mi Voz ${form.getValues('gender')}`;
-    const newVoiceProfile = {
-      id: voiceProfileId,
+    setIsSaving(true);
+    setRecordingState('loading');
+  
+    const result = await saveVoiceProfileAction({
       userId: user.uid,
-      name: profileName,
-      isCustom: true,
-      createdBy: user.uid,
-      securityLevel: 'medium',
-      audioDataUri: audioSrc,
-    };
-
-    const voiceDocRef = doc(
-      firestore,
-      `users/${user.uid}/voice_profiles/${voiceProfileId}`
-    );
-
-    setDocumentNonBlocking(voiceDocRef, newVoiceProfile, { merge: true });
-
-    toast({
-      title: 'Voz Guardada',
-      description: `El perfil de voz "${profileName}" ha sido guardado.`,
+      gender: form.getValues('gender'),
+      audioSrc: audioSrc,
     });
-    setRecordingState('saved');
+  
+    setIsSaving(false);
+  
+    if (result.success && result.profileName) {
+      toast({
+        title: 'Voz Guardada',
+        description: `El perfil de voz "${result.profileName}" ha sido guardado.`,
+      });
+      setRecordingState('saved');
+    } else {
+      toast({
+        variant: 'destructive',
+        title: 'Error al Guardar',
+        description: result.error || 'No se pudo guardar el perfil de voz.',
+      });
+      setRecordingState('playing'); // Revert to a state where they can try again
+    }
   };
+  
   
   const simulateRecordingAndAlteration = async () => {
     setRecordingState('loading');
-    toast({
-      title: 'Simulación de Grabación',
-      description: 'Usando texto de muestra para generar voz alterada...',
-    });
+    
+    if (permissionState === 'granted') {
+       toast({
+        title: 'Grabación en curso...',
+        description: 'En un entorno real, estaríamos grabando tu voz.',
+      });
+    } else {
+       toast({
+        title: 'Simulación de Grabación',
+        description: 'Usando texto de muestra para generar voz alterada...',
+      });
+    }
+
 
     const values = form.getValues();
     const result = await getAlteredVoiceAction({
       ...values,
-      text: SAMPLE_TEXT, // Use sample text for TTS model
+      text: SAMPLE_TEXT,
     });
 
     if (result.error) {
@@ -204,23 +215,8 @@ export default function CallScreen() {
 
   const startRecording = async () => {
     if (permissionState !== 'granted') {
-       if (permissionState === 'not_found') {
-        // If no mic is found, proceed with simulation
-        await simulateRecordingAndAlteration();
-        return;
-       }
-       // If permission is 'denied' or 'prompt', show the dedicated screen.
-       // We can also re-request here, but the UI already guides the user.
-       await requestMicrophonePermission();
-       if(permissionState !== 'granted' && permissionState !== 'not_found') {
-         toast({
-             variant: 'destructive',
-             title: 'Error de Micrófono',
-             description:
-             'No se pudo acceder al micrófono. Por favor, comprueba los permisos.',
-         });
-         return;
-       }
+       await simulateRecordingAndAlteration();
+       return;
     }
       
     try {
@@ -234,9 +230,6 @@ export default function CallScreen() {
 
       mediaRecorderRef.current.onstop = async () => {
         setRecordingState('loading');
-        // Since the AI model now expects text, we can't use the recorded audio directly.
-        // We will continue to use the simulation flow for now.
-        // In a real implementation, you'd use a Speech-to-Text API here.
         await simulateRecordingAndAlteration();
         stream.getTracks().forEach((track) => track.stop());
       };
@@ -302,8 +295,7 @@ export default function CallScreen() {
     }
   };
 
-  // Dedicated permission screens
-  if (permissionState === 'denied' || permissionState === 'prompt' || permissionState === 'not_found') {
+  if (permissionState === 'denied' || permissionState === 'prompt' || (permissionState === 'not_found' && typeof navigator !== 'undefined')) {
     return (
       <Card className="w-full max-w-md mx-auto rounded-3xl shadow-2xl overflow-hidden border-4 border-card text-center">
         <CardHeader>
@@ -323,7 +315,7 @@ export default function CallScreen() {
               <AlertCircle className="h-4 w-4" />
               <AlertTitle>Micrófono no encontrado</AlertTitle>
               <AlertDescription>
-                No hemos podido detectar ningún micrófono. Asegúrate de que uno esté conectado y habilitado en la configuración de tu sistema.
+                No hemos podido detectar ningún micrófono. Asegúrate de que uno esté conectado y habilitado.
               </AlertDescription>
             </Alert>
           )}
@@ -377,7 +369,6 @@ export default function CallScreen() {
     );
   }
 
-  // Main call screen
   return (
     <Card className="w-full max-w-md mx-auto rounded-3xl shadow-2xl overflow-hidden border-4 border-card">
       <CardHeader className="items-center text-center pt-8">
@@ -525,9 +516,9 @@ export default function CallScreen() {
               recordingState !== 'loading' && (
                 <Button
                   onClick={handleSaveVoice}
-                  disabled={!user || recordingState === 'saved'}
+                  disabled={!user || recordingState === 'saved' || isSaving}
                 >
-                  <Save className="mr-2 h-4 w-4" />
+                  {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
                   {recordingState === 'saved'
                     ? '¡Voz Guardada!'
                     : 'Guardar Voz'}
