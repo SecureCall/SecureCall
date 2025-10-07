@@ -75,7 +75,8 @@ export default function CallScreen() {
   useEffect(() => {
     const getMicPermission = async () => {
       try {
-        await navigator.mediaDevices.getUserMedia({ audio: true });
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream.getTracks().forEach(track => track.stop());
         setHasMicPermission(true);
       } catch (error) {
         console.error("Microphone access denied:", error);
