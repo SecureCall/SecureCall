@@ -8,9 +8,10 @@ import { initializeFirebase } from '@/firebase';
 import { doc, setDoc } from 'firebase/firestore';
 import { z } from 'zod';
 import { v4 as uuidv4 } from 'uuid';
-import { AccessToken } from 'twilio/lib/jwt/AccessToken';
+import twilio from 'twilio';
 import VoiceResponse from 'twilio/lib/twiml/VoiceResponse';
 
+const AccessToken = twilio.jwt.AccessToken;
 const VoiceGrant = AccessToken.VoiceGrant;
 
 export async function getTwilioToken() {
