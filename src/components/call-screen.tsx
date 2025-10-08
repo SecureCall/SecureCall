@@ -2,20 +2,18 @@
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import {
-  Mic,
+  MicOff,
   Phone,
   PhoneOff,
-  Save,
   Shield,
   Loader2,
-  AlertCircle,
   Plus,
 } from 'lucide-react';
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 
-import { saveVoiceProfileAction, getTwilioToken } from '@/app/actions';
+import { getTwilioToken } from '@/app/actions';
 import { PlaceHolderImages } from '@/lib/placeholder-images';
 import { Button } from '@/components/ui/button';
 import {
@@ -29,6 +27,7 @@ import {
 import {
   Form,
   FormControl,
+  FormField,
   FormItem,
   FormLabel,
   FormMessage,
@@ -40,14 +39,13 @@ import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
 import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
 import { useFirebase } from '@/firebase/provider';
-import { Alert, AlertDescription, AlertTitle } from './ui/alert';
 import type { Device } from '@twilio/voice-sdk';
 
 const formSchema = z.object({
   gender: z.enum(['hero', 'incognito', 'robot'], {
     required_error: 'You need to select a voice type.',
   }),
-  phoneNumber: z.string().min(1, "El número de teléfono es obligatorio."),
+  phoneNumber: z.string().min(1, 'El número de teléfono es obligatorio.'),
 });
 
 type CallState = 'idle' | 'connecting' | 'on_call' | 'error';
