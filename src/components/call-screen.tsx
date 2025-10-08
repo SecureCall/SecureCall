@@ -3,20 +3,19 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import {
   Mic,
-  MicOff,
+  Phone,
   PhoneOff,
   Save,
   Shield,
-  Square,
-  Volume2,
-  AlertCircle,
   Loader2,
+  AlertCircle,
+  Plus,
 } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 
-import { getAlteredVoiceAction, saveVoiceProfileAction } from '@/app/actions';
+import { saveVoiceProfileAction, getTwilioToken } from '@/app/actions';
 import { PlaceHolderImages } from '@/lib/placeholder-images';
 import { Button } from '@/components/ui/button';
 import {
@@ -30,11 +29,11 @@ import {
 import {
   Form,
   FormControl,
-  FormField,
   FormItem,
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Switch } from '@/components/ui/switch';
@@ -42,331 +41,153 @@ import { useToast } from '@/hooks/use-toast';
 import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
 import { useFirebase } from '@/firebase/provider';
 import { Alert, AlertDescription, AlertTitle } from './ui/alert';
+import type { Device } from '@twilio/voice-sdk';
 
 const formSchema = z.object({
   gender: z.enum(['hero', 'incognito', 'robot'], {
     required_error: 'You need to select a voice type.',
   }),
+  phoneNumber: z.string().min(1, "El número de teléfono es obligatorio."),
 });
 
-type RecordingState = 'idle' | 'recording' | 'playing' | 'loading' | 'saved';
-type PermissionState = 'prompt' | 'granted' | 'denied' | 'not_found';
-
-const SAMPLE_TEXT = "Hello, this is a test of the SecureCall voice alteration system. Your privacy is our priority.";
-
+type CallState = 'idle' | 'connecting' | 'on_call' | 'error';
 
 export default function CallScreen() {
   const [isEffectOn, setIsEffectOn] = useState(true);
-  const [recordingState, setRecordingState] = useState<RecordingState>('idle');
-  const [audioSrc, setAudioSrc] = useState<string | null>(null);
+  const [callState, setCallState] = useState<CallState>('idle');
   const [callTime, setCallTime] = useState(0);
-  const [permissionState, setPermissionState] =
-    useState<PermissionState>('prompt');
-  
-  const [isSaving, setIsSaving] = useState(false);
 
-  const audioRef = useRef<HTMLAudioElement>(null);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
-
+  const deviceRef = useRef<Device | null>(null);
   const { toast } = useToast();
   const { user } = useFirebase();
-
   const avatar = PlaceHolderImages.find((img) => img.id === 'avatar-1');
-
-  const requestMicrophonePermission = async () => {
-    // On server, navigator is not available.
-    if (typeof navigator === 'undefined') {
-      setPermissionState('not_found');
-      return;
-    }
-    try {
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        setPermissionState('not_found');
-        return;
-      }
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      stream.getTracks().forEach((track) => track.stop());
-      setPermissionState('granted');
-    } catch (error: any) {
-        if (error.name === 'NotFoundError') {
-            setPermissionState('not_found');
-        } else if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
-            setPermissionState('denied');
-        } else {
-            console.error('Microphone access error:', error.name, error.message);
-            setPermissionState('denied'); 
-        }
-    }
-  };
-
-  useEffect(() => {
-    requestMicrophonePermission();
-  }, []);
-
-  useEffect(() => {
-    let timer: NodeJS.Timeout;
-    timer = setInterval(() => {
-        setCallTime((prevTime) => prevTime + 1);
-    }, 1000);
-    
-    return () => {
-      if (timer) {
-        clearInterval(timer);
-      }
-    };
-  }, []);
-
-  const formatTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60)
-      .toString()
-      .padStart(2, '0');
-    const secs = (seconds % 60).toString().padStart(2, '0');
-    return `${mins}:${secs}`;
-  };
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
       gender: 'hero',
+      phoneNumber: '',
     },
   });
 
-  const resetState = () => {
-    setRecordingState('idle');
-    setAudioSrc(null);
-  };
-
-  const handleSaveVoice = async () => {
-    if (!user || !audioSrc) {
-      toast({
-        variant: 'destructive',
-        title: 'Error',
-        description: 'No se pudo guardar el perfil de voz. Inténtalo de nuevo.',
-      });
-      return;
-    }
-    setIsSaving(true);
-    setRecordingState('loading');
-  
-    const result = await saveVoiceProfileAction({
-      userId: user.uid,
-      gender: form.getValues('gender'),
-      audioSrc: audioSrc,
-    });
-  
-    setIsSaving(false);
-  
-    if (result.success && result.profileName) {
-      toast({
-        title: 'Voz Guardada',
-        description: `El perfil de voz "${result.profileName}" ha sido guardado.`,
-      });
-      setRecordingState('saved');
-    } else {
-      toast({
-        variant: 'destructive',
-        title: 'Error al Guardar',
-        description: result.error || 'No se pudo guardar el perfil de voz.',
-      });
-      setRecordingState('playing'); // Revert to a state where they can try again
-    }
-  };
-
-  const handleGenerateVoice = async () => {
-    setRecordingState('loading');
-    const values = form.getValues();
-    
+  const setupTwilioDevice = useCallback(async () => {
     try {
-      const result = await getAlteredVoiceAction({
-        ...values,
-        text: SAMPLE_TEXT, // In a real scenario, this would be the recorded audio data URI
-      });
-  
-      if (result.error) {
+      const result = await getTwilioToken();
+      if (result.error || !result.token) {
         toast({
           variant: 'destructive',
-          title: 'Error de Generación',
-          description: result.error,
+          title: 'Error de Twilio',
+          description: result.error || 'No se pudo obtener el token de Twilio.',
         });
-        resetState();
-      } else if (result.audioDataUri) {
-        setAudioSrc(result.audioDataUri);
-        toast({
-          title: '¡Éxito!',
-          description: 'Tu voz alterada ha sido generada.',
-        });
-        setRecordingState('playing');
+        setCallState('error');
+        return;
       }
-    } catch (e: any) {
-      console.error("Fatal generation error:", e);
-      toast({
-        variant: 'destructive',
-        title: 'Error Crítico',
-        description: 'No se pudo contactar el servicio de IA. Inténtalo de nuevo más tarde.',
-      });
-      resetState();
-    }
-  };
-  
-  const startRecording = async () => {
-    if (permissionState !== 'granted') {
-       // If no mic, go straight to generation with sample text
-       await handleGenerateVoice();
-       return;
-    }
       
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mediaRecorderRef.current = new MediaRecorder(stream);
-      audioChunksRef.current = [];
+      const { Device } = await import('@twilio/voice-sdk');
+      const device = new Device(result.token, {
+        codecPreferences: ['opus', 'pcmu'],
+      });
 
-      mediaRecorderRef.current.ondataavailable = (event) => {
-        audioChunksRef.current.push(event.data);
-      };
+      device.on('error', (error) => {
+        console.error('Twilio Device Error: ', error);
+        setCallState('error');
+      });
 
-      mediaRecorderRef.current.onstop = async () => {
-        // Once recording stops, generate the voice
-        await handleGenerateVoice();
-        stream.getTracks().forEach((track) => track.stop());
-      };
+      device.on('disconnect', () => {
+        setCallState('idle');
+      });
 
-      mediaRecorderRef.current.start();
-      setRecordingState('recording');
-    } catch (error) {
-      console.error('Microphone access error:', error);
+      deviceRef.current = device;
+    } catch (e: any) {
+      console.error('Error al configurar Twilio: ', e);
       toast({
         variant: 'destructive',
-        title: 'Error Inesperado',
-        description:
-          'Ocurrió un error al intentar iniciar la grabación.',
+        title: 'Error de Configuración',
+        description: 'No se pudo inicializar el dispositivo de llamada.',
       });
-      resetState();
+      setCallState('error');
     }
-  };
-
-  const stopRecording = () => {
-    if (
-      mediaRecorderRef.current &&
-      mediaRecorderRef.current.state === 'recording'
-    ) {
-      mediaRecorderRef.current.stop();
-    }
-  };
+  }, [toast]);
 
   useEffect(() => {
-    if (recordingState === 'playing' && audioSrc && audioRef.current) {
-      audioRef.current.load();
-      audioRef.current.play().catch((e) => {
-        toast({
-          variant: 'destructive',
-          title: 'Error de Reproducción',
-          description: 'No se pudo reproducir el audio.',
+    setupTwilioDevice();
+    return () => {
+      deviceRef.current?.destroy();
+    };
+  }, [setupTwilioDevice]);
+
+
+  useEffect(() => {
+    let timer: NodeJS.Timeout;
+    if (callState === 'on_call') {
+      timer = setInterval(() => {
+        setCallTime((prevTime) => prevTime + 1);
+      }, 1000);
+    } else {
+      setCallTime(0);
+    }
+    
+    return () => {
+      if (timer) clearInterval(timer);
+    };
+  }, [callState]);
+
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60).toString().padStart(2, '0');
+    const secs = (seconds % 60).toString().padStart(2, '0');
+    return `${mins}:${secs}`;
+  };
+
+  const handleCall = async (values: z.infer<typeof formSchema>) => {
+    if (!deviceRef.current) {
+        toast({ variant: 'destructive', title: 'Error', description: 'El dispositivo Twilio no está listo.' });
+        return;
+    }
+    setCallState('connecting');
+    try {
+        const call = await deviceRef.current.connect({
+            params: { To: values.phoneNumber },
         });
-        console.error('Audio play failed', e);
-      });
-      audioRef.current.onended = () => setRecordingState('idle');
-    }
-  }, [recordingState, audioSrc, toast]);
-
-  const handleMicButtonClick = () => {
-    if (recordingState === 'idle' || recordingState === 'saved') {
-      setAudioSrc(null);
-      startRecording();
-    } else if (recordingState === 'recording') {
-      stopRecording();
+        call.on('accept', () => {
+            setCallState('on_call');
+        });
+    } catch (error) {
+        console.error('Error al realizar la llamada:', error);
+        toast({ variant: 'destructive', title: 'Error de llamada', description: 'No se pudo iniciar la llamada.' });
+        setCallState('idle');
     }
   };
 
-  const getRecordButtonIcon = () => {
-    switch (recordingState) {
-      case 'loading':
-        return <Loader2 className="h-8 w-8 animate-spin" />;
-      case 'recording':
-        return <Square className="h-8 w-8" />;
-      case 'playing':
-        return <Volume2 className="h-8 w-8" />;
-      case 'idle':
-      case 'saved':
-      default:
-        return <Mic className="h-8 w-8" />;
-    }
+  const handleHangup = () => {
+    deviceRef.current?.disconnectAll();
   };
 
-  if (permissionState === 'denied' || permissionState === 'prompt' || (permissionState === 'not_found' && typeof navigator !== 'undefined')) {
+  const getActionButton = () => {
+    if (callState === 'on_call') {
+      return (
+        <Button
+          type="button"
+          onClick={handleHangup}
+          className="w-20 h-20 rounded-full bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+          size="icon"
+        >
+          <PhoneOff className="h-8 w-8" />
+        </Button>
+      );
+    }
+    
     return (
-      <Card className="w-full max-w-md mx-auto rounded-3xl shadow-2xl overflow-hidden border-4 border-card text-center">
-        <CardHeader>
-          <div className="flex justify-center">
-            <MicOff size={48} className="text-destructive" />
-          </div>
-          <CardTitle className="text-2xl pt-4">Micrófono Requerido</CardTitle>
-           {permissionState !== 'not_found' && (
-            <CardDescription>
-              Para modificar tu voz, SecureCall necesita acceso al micrófono.
-            </CardDescription>
-           )}
-        </CardHeader>
-        <CardContent>
-          {permissionState === 'not_found' && (
-            <Alert variant="destructive">
-              <AlertCircle className="h-4 w-4" />
-              <AlertTitle>Micrófono no encontrado</AlertTitle>
-              <AlertDescription>
-                No hemos podido detectar ningún micrófono. Asegúrate de que uno esté conectado y habilitado.
-              </AlertDescription>
-            </Alert>
-          )}
-          {permissionState === 'denied' && (
-            <Alert variant="destructive" className="mt-4">
-              <AlertCircle className="h-4 w-4" />
-              <AlertTitle>Acceso Denegado</AlertTitle>
-              <AlertDescription>
-                Debes habilitar el permiso del micrófono en la configuración de
-                tu navegador para continuar.
-              </AlertDescription>
-            </Alert>
-          )}
-          {permissionState === 'prompt' && (
-            <div className="bg-muted p-4 rounded-lg text-left space-y-4">
-              <div className="flex items-start">
-                <div className="flex-shrink-0 w-6 h-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center mr-3">
-                  1
-                </div>
-                <p className="text-sm">
-                  Haz clic en "Permitir Micrófono" para activar la protección.
-                </p>
-              </div>
-              <div className="flex items-start">
-                <div className="flex-shrink-0 w-6 h-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center mr-3">
-                  2
-                </div>
-                <p className="text-sm">
-                  Selecciona "Permitir" en la ventana que aparecerá en tu
-                  navegador.
-                </p>
-              </div>
-            </div>
-          )}
-        </CardContent>
-        <CardFooter className="flex-col gap-4">
-          <Button
-            onClick={requestMicrophonePermission}
-            className="w-full"
-            size="lg"
-            disabled={permissionState === 'not_found'}
-          >
-            <Mic className="mr-2 h-5 w-5" />
-            Permitir Micrófono
-          </Button>
-          <p className="text-xs text-muted-foreground">
-            Tu privacidad es importante. Solo accedemos al micrófono cuando grabas.
-          </p>
-        </CardFooter>
-      </Card>
+      <Button
+        type="submit"
+        className="w-20 h-20 rounded-full bg-green-500 hover:bg-green-600 text-white"
+        disabled={callState === 'connecting' || !form.formState.isValid}
+        size="icon"
+      >
+        {callState === 'connecting' ? <Loader2 className="h-8 w-8 animate-spin" /> : <Phone className="h-8 w-8" />}
+      </Button>
     );
-  }
-
+  };
+  
   return (
     <Card className="w-full max-w-md mx-auto rounded-3xl shadow-2xl overflow-hidden border-4 border-card">
       <CardHeader className="items-center text-center pt-8">
@@ -378,23 +199,14 @@ export default function CallScreen() {
               data-ai-hint={avatar.imageHint}
             />
           )}
-          <AvatarFallback>JD</AvatarFallback>
+          <AvatarFallback>SC</AvatarFallback>
         </Avatar>
-        <CardTitle className="text-3xl font-bold pt-4">Jane Doe</CardTitle>
-        <CardDescription className="text-lg text-accent">
-          {formatTime(callTime)}
+        <CardTitle className="text-3xl font-bold pt-4">SecureCall</CardTitle>
+        <CardDescription className="text-lg text-accent h-7">
+          {callState === 'on_call' ? formatTime(callTime) : (callState === 'connecting' ? 'Llamando...' : 'Listo para llamar')}
         </CardDescription>
       </CardHeader>
       <CardContent className="p-6">
-        {permissionState === 'not_found' && (
-             <Alert variant="destructive" className="mt-4 mb-4">
-                <AlertCircle className="h-4 w-4" />
-                <AlertTitle>No se encontró micrófono</AlertTitle>
-                <AlertDescription>
-                  Se usará audio de muestra para las pruebas.
-                </AlertDescription>
-              </Alert>
-        )}
         <div className="flex items-center justify-center space-x-3 mb-6 p-3 rounded-lg bg-muted/50">
           <Shield className="text-accent h-5 w-5" />
           <Label htmlFor="effect-switch" className="font-medium">
@@ -409,18 +221,32 @@ export default function CallScreen() {
         </div>
 
         <Form {...form}>
-          <form onSubmit={(e) => e.preventDefault()} className="space-y-6">
+          <form onSubmit={form.handleSubmit(handleCall)} className="space-y-6">
             <fieldset
-              disabled={
-                !isEffectOn ||
-                (recordingState !== 'idle' && recordingState !== 'saved')
-              }
+              disabled={callState === 'on_call' || callState === 'connecting'}
             >
+              <FormField
+                control={form.control}
+                name="phoneNumber"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Número de Teléfono</FormLabel>
+                    <FormControl>
+                      <div className="flex items-center">
+                         <span className="inline-flex items-center px-3 rounded-l-md border border-r-0 border-input bg-muted text-sm">+</span>
+                         <Input type="tel" placeholder="123456789" {...field} className="rounded-l-none"/>
+                      </div>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
               <FormField
                 control={form.control}
                 name="gender"
                 render={({ field }) => (
-                  <FormItem className="space-y-3">
+                  <FormItem className="space-y-3 mt-4">
                     <FormLabel>Perfiles de Voz</FormLabel>
                     <FormControl>
                       <RadioGroup
@@ -476,67 +302,29 @@ export default function CallScreen() {
             </fieldset>
 
             <div className="pt-2 flex flex-col items-center">
-              <Button
-                type="button"
-                onClick={handleMicButtonClick}
-                className="w-20 h-20 rounded-full bg-accent hover:bg-accent/90 text-accent-foreground font-bold text-lg"
-                disabled={
-                  !isEffectOn ||
-                  recordingState === 'playing' ||
-                  recordingState === 'loading'
-                }
-                size="icon"
-              >
-                {getRecordButtonIcon()}
-              </Button>
+              {getActionButton()}
               <p className="text-sm text-muted-foreground mt-2 h-4">
-                {recordingState === 'recording' &&
-                  'Grabando... pulsa para parar.'}
-                {(recordingState === 'idle' || recordingState === 'saved') &&
-                  'Pulsa para grabar y probar un perfil.'}
-                {recordingState === 'loading' && 'Procesando...'}
-                {recordingState === 'playing' && 'Reproduciendo voz alterada.'}
+                {callState === 'idle' && 'Introduce un número y pulsa para llamar.'}
+                {callState === 'connecting' && 'Estableciendo conexión...'}
+                {callState === 'on_call' && 'Llamada en curso...'}
               </p>
             </div>
           </form>
         </Form>
-        {audioSrc && (
-          <div className="mt-4 flex flex-col items-center gap-4">
-            <audio
-              ref={audioRef}
-              controls
-              className="w-full hidden"
-              src={audioSrc}
-            >
-              Your browser does not support the audio element.
-            </audio>
-            {recordingState !== 'recording' &&
-              recordingState !== 'loading' && (
-                <Button
-                  onClick={handleSaveVoice}
-                  disabled={!user || recordingState === 'saved' || isSaving}
-                >
-                  {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                  {recordingState === 'saved'
-                    ? '¡Voz Guardada!'
-                    : 'Guardar Voz'}
-                </Button>
-              )}
-          </div>
-        )}
       </CardContent>
       <CardFooter className="grid grid-cols-2 gap-4 bg-muted/50 p-4">
-        <Button variant="ghost" className="flex-1" aria-label="Mute">
+        <Button variant="ghost" className="flex-1" aria-label="Mute" disabled={callState !== 'on_call'}>
           <MicOff className="h-5 w-5 mr-2" />
           Mute
         </Button>
         <Button
-          variant="destructive"
-          className="flex-1 font-bold"
-          aria-label="End call"
+          variant="ghost"
+          className="flex-1"
+          aria-label="Add person"
+           disabled={callState !== 'on_call'}
         >
-          <PhoneOff className="h-5 w-5 mr-2" />
-          Finalizar
+          <Plus className="h-5 w-5 mr-2" />
+          Añadir
         </Button>
       </CardFooter>
     </Card>

@@ -8,6 +8,35 @@ import { initializeFirebase } from '@/firebase';
 import { doc, setDoc } from 'firebase/firestore';
 import { z } from 'zod';
 import { v4 as uuidv4 } from 'uuid';
+import { AccessToken } from 'twilio/lib/jwt/AccessToken';
+import VoiceResponse from 'twilio/lib/twiml/VoiceResponse';
+
+const VoiceGrant = AccessToken.VoiceGrant;
+
+export async function getTwilioToken() {
+  // Access your Twilio Account SID and API Key credentials from environment variables
+  const twilioAccountSid = process.env.TWILIO_ACCOUNT_SID;
+  const twilioApiKey = process.env.TWILIO_API_KEY_SID;
+  const twilioApiSecret = process.env.TWILIO_API_SECRET;
+  const outgoingAppSid = process.env.TWILIO_APP_SID;
+  const identity = `user_${uuidv4()}`; // A unique identity for the client
+
+  if (!twilioAccountSid || !twilioApiKey || !twilioApiSecret || !outgoingAppSid) {
+    return { error: 'Twilio environment variables are not configured.' };
+  }
+
+  const voiceGrant = new VoiceGrant({
+    outgoingApplicationSid: outgoingAppSid,
+    incomingAllow: true, // Allow incoming calls
+  });
+
+  const token = new AccessToken(twilioAccountSid, twilioApiKey, twilioApiSecret, {
+    identity: identity,
+  });
+  token.addGrant(voiceGrant);
+
+  return { token: token.toJwt() };
+}
 
 
 const VoiceSchema = z.object({
@@ -32,9 +61,8 @@ export async function getAlteredVoiceAction(
     return { audioDataUri: result.audioDataUri };
   } catch (e: any) {
     console.error('AI Error:', e.message);
-    // Provide a more helpful error message for deployment environments
     if (e.message?.includes('API key')) {
-        return { error: 'Error de IA: La clave de API no está configurada en el servidor. Asegúrate de añadir la variable de entorno GEMINI_API_KEY en Vercel.' };
+        return { error: 'Error de IA: La clave de API no está configurada en el servidor. Asegúrate de añadir la variable de entorno GEMINI_API_KEY.' };
     }
     return { error: 'No se pudo generar la voz. Por favor, inténtalo de nuevo más tarde.' };
   }
