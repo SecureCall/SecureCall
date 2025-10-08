@@ -7,14 +7,9 @@ import { getFirestore } from 'firebase/firestore'
 
 // IMPORTANT: DO NOT MODIFY THIS FUNCTION
 export function initializeFirebase() {
-  if (!getApps().length) {
-    // When deploying to Vercel or other non-Google platforms, we must provide the config.
-    const firebaseApp = initializeApp(firebaseConfig);
-    return getSdks(firebaseApp);
-  }
-
-  // If already initialized, return the SDKs with the already initialized App
-  return getSdks(getApp());
+  // Always initialize with the config object. This works for all environments
+  // including Vercel and local development. It also handles hot-reloading correctly.
+  return getSdks(getApps().length ? getApp() : initializeApp(firebaseConfig));
 }
 
 export function getSdks(firebaseApp: FirebaseApp) {
